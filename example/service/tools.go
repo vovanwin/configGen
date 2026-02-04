@@ -3,4 +3,4 @@
 
 package tools
 
-import _ "github.com/yourname/configgen/cmd/configgen"
+import _ "github.com/vovanwin/configgen/cmd/configgen"
