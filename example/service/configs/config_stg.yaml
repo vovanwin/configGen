@@ -1,9 +1,9 @@
 server:
-host: "localhost"
-port: 8080
+  host: "localhost"
+  port: 8080
 
 
 db:
-url: "postgres://user:pass@localhost:5432/db"
-pool_size: 10
-timeout: 1.5
+  url: "postgres://user:pass@localhost:5432/db"
+  pool_size: 10
+  timeout: 1.5

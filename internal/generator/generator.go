@@ -25,6 +25,14 @@ func Generate(outDir, pkgName string, fields map[string]*schema.Field) error {
 	}
 	pl, err := template.New("cfg").Funcs(template.FuncMap{
 		"GoType": goType,
+		"keys": func(m map[string]*schema.Field) []string {
+			ks := make([]string, 0, len(m))
+			for k := range m {
+				ks = append(ks, k)
+			}
+			sort.Strings(ks)
+			return ks
+		},
 	}).Parse(string(tmplB))
 	if err != nil {
 		return err
