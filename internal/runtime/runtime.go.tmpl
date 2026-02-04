@@ -1,0 +1,24 @@
+package config
+
+
+import (
+"fmt"
+"os"
+"path/filepath"
+"io/ioutil"
+)
+
+
+// Load reads config_${ENV}.yaml by APP_ENV (defaults to stg)
+func Load() (*Config, error) {
+env := os.Getenv("APP_ENV")
+if env == "" {
+env = "stg"
+}
+p := filepath.Join("configs", fmt.Sprintf("config_%s.yaml", env))
+b, err := ioutil.ReadFile(p)
+if err != nil {
+return nil, err
+}
+return LoadFromYAML(b)
+}
