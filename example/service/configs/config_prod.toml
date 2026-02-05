@@ -1,0 +1,45 @@
+# Конфигурация для окружения разработки
+
+# Настройки HTTP сервера
+[server]
+# Адрес для прослушивания
+host = "localhost"
+# Порт сервера
+port = 8080
+# Таймаут на чтение запроса
+read_timeout = "5s"
+# Таймаут на запись ответа
+write_timeout = "10s"
+
+# Настройки базы данных PostgreSQL
+[db]
+# Хост базы данных
+host = "localhost"
+# Порт PostgreSQL
+port = 5432
+# Имя базы данных
+name = "myapp_dev"
+# Пользователь БД
+user = "dev_user"
+# Пароль (в dev можно хранить в конфиге)
+password = "dev_password"
+# Размер пула соединений
+pool_size = 5
+# Время жизни неактивного соединения
+max_idle_time = "5m"
+
+# Настройки Redis
+[redis]
+# Хост Redis
+host = "localhost"
+# Порт Redis
+port = 6379
+# Номер базы данных
+db = 0
+
+# Настройки логирования
+[log]
+# Уровень логирования: debug, info, warn, error
+level = "debug"
+# Формат вывода: text или json
+format = "text"
