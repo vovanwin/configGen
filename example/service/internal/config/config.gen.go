@@ -3,110 +3,557 @@
 
 package config
 
-import "time"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
 
-// Config основная структура конфигурации
-type Config struct {
-	// Информация о приложении
-	App App `toml:"app"`
-	Db  Db  `toml:"db"`
-	// Переключатели функций
-	Features Features `toml:"features"`
-	// Лимиты и ограничения
-	Limits Limits `toml:"limits"`
-	Log    Log    `toml:"log"`
-	Redis  Redis  `toml:"redis"`
-	Server Server `toml:"server"`
-}
+	"github.com/BurntSushi/toml"
+)
 
-// Информация о приложении
-// App секция конфигурации
-type App struct {
+// Key тип для ключей конфигурации
+type Key string
+
+func (k Key) String() string { return string(k) }
+
+// Ключи конфигурации
+const (
 	// Название сервиса
-	Name string `toml:"name"`
+	AppName Key = "app.name"
 	// Версия приложения
-	Version string `toml:"version"`
-}
-
-// Db секция конфигурации
-type Db struct {
+	AppVersion Key = "app.version"
 	// Хост базы данных
-	Host string `toml:"host"`
+	DbHost Key = "db.host"
 	// Время жизни неактивного соединения
-	MaxIdleTime time.Duration `toml:"max_idle_time"`
+	DbMaxIdleTime Key = "db.max_idle_time"
 	// Имя базы данных
-	Name string `toml:"name"`
+	DbName Key = "db.name"
 	// Пароль (в dev можно хранить в конфиге)
-	Password string `toml:"password"`
+	DbPassword Key = "db.password"
 	// Размер пула соединений
-	PoolSize int `toml:"pool_size"`
+	DbPoolSize Key = "db.pool_size"
 	// Порт PostgreSQL
-	Port int `toml:"port"`
+	DbPort Key = "db.port"
 	// Пользователь БД
-	User string `toml:"user"`
-}
-
-// Переключатели функций
-// Features секция конфигурации
-type Features struct {
+	DbUser Key = "db.user"
 	// Включить сбор метрик
-	EnableMetrics bool `toml:"enable_metrics"`
+	FeaturesEnableMetrics Key = "features.enable_metrics"
 	// Включить трейсинг
-	EnableTracing bool `toml:"enable_tracing"`
-}
-
-// Лимиты и ограничения
-// Limits секция конфигурации
-type Limits struct {
+	FeaturesEnableTracing Key = "features.enable_tracing"
 	// Максимальное количество одновременных соединений
-	MaxConnections int `toml:"max_connections"`
+	LimitsMaxConnections Key = "limits.max_connections"
 	// Максимальный размер запроса в байтах (10MB)
-	MaxRequestSize int `toml:"max_request_size"`
+	LimitsMaxRequestSize Key = "limits.max_request_size"
 	// Таймаут обработки запроса
-	RequestTimeout time.Duration `toml:"request_timeout"`
-}
-
-// Log секция конфигурации
-type Log struct {
+	LimitsRequestTimeout Key = "limits.request_timeout"
 	// Формат вывода: text или json
-	Format string `toml:"format"`
+	LogFormat Key = "log.format"
 	// Уровень логирования: debug, info, warn, error
-	Level string `toml:"level"`
-}
-
-// Redis секция конфигурации
-type Redis struct {
+	LogLevel Key = "log.level"
 	// Номер базы данных
-	Db int `toml:"db"`
+	RedisDb Key = "redis.db"
 	// Хост Redis
-	Host string `toml:"host"`
+	RedisHost Key = "redis.host"
 	// Порт Redis
-	Port int `toml:"port"`
-}
-
-// Server секция конфигурации
-type Server struct {
+	RedisPort Key = "redis.port"
 	// Адрес для прослушивания
-	Host string `toml:"host"`
+	ServerHost Key = "server.host"
 	// Порт сервера
-	Port int `toml:"port"`
+	ServerPort Key = "server.port"
 	// Таймаут на чтение запроса
-	ReadTimeout time.Duration `toml:"read_timeout"`
+	ServerReadTimeout Key = "server.read_timeout"
 	// Таймаут на запись ответа
-	WriteTimeout time.Duration `toml:"write_timeout"`
+	ServerWriteTimeout Key = "server.write_timeout"
+)
+
+// Config хранит конфигурацию приложения
+type Config struct {
+	data map[string]any
+	env  string
 }
 
-// Value содержит константные значения конфигурации (из value.toml)
-// Эти значения редко меняются и общие для всех окружений
-type Value struct {
-	// Информация о приложении
-	App App `toml:"app"`
-	Db  Db  `toml:"db"`
-	// Переключатели функций
-	Features Features `toml:"features"`
-	// Лимиты и ограничения
-	Limits Limits `toml:"limits"`
-	Log    Log    `toml:"log"`
-	Redis  Redis  `toml:"redis"`
-	Server Server `toml:"server"`
+// Options настройки загрузки
+type Options struct {
+	Dir    string // Директория с конфигами (default: ./configs)
+	Env    string // Окружение (default: из APP_ENV или "dev")
+	EnvVar string // Имя переменной окружения (default: APP_ENV)
+}
+
+// NewConfig создает и загружает конфигурацию
+func NewConfig(opts ...Options) (*Config, error) {
+	opt := Options{
+		Dir:    "./configs",
+		EnvVar: "APP_ENV",
+	}
+	if len(opts) > 0 {
+		if opts[0].Dir != "" {
+			opt.Dir = opts[0].Dir
+		}
+		if opts[0].Env != "" {
+			opt.Env = opts[0].Env
+		}
+		if opts[0].EnvVar != "" {
+			opt.EnvVar = opts[0].EnvVar
+		}
+	}
+
+	// Определяем окружение
+	env := opt.Env
+	if env == "" {
+		env = os.Getenv(opt.EnvVar)
+		if env == "" {
+			env = "dev"
+		}
+	}
+
+	data := make(map[string]any)
+
+	// 1. Загружаем value.toml
+	valuePath := filepath.Join(opt.Dir, "value.toml")
+	if _, err := os.Stat(valuePath); err == nil {
+		if err := loadTOML(valuePath, data); err != nil {
+			return nil, fmt.Errorf("value.toml: %w", err)
+		}
+	}
+
+	// 2. Загружаем config_{env}.toml
+	envPath := filepath.Join(opt.Dir, fmt.Sprintf("config_%s.toml", env))
+	if err := loadTOML(envPath, data); err != nil {
+		return nil, fmt.Errorf("config_%s.toml: %w", env, err)
+	}
+
+	// 3. Загружаем config_local.toml (если есть)
+	localPath := filepath.Join(opt.Dir, "config_local.toml")
+	if _, err := os.Stat(localPath); err == nil {
+		if err := loadTOML(localPath, data); err != nil {
+			return nil, fmt.Errorf("config_local.toml: %w", err)
+		}
+	}
+
+	return &Config{data: data, env: env}, nil
+}
+
+// MustNewConfig создает конфиг или паникует
+func MustNewConfig(opts ...Options) *Config {
+	cfg, err := NewConfig(opts...)
+	if err != nil {
+		panic(fmt.Sprintf("config: %v", err))
+	}
+	return cfg
+}
+
+func loadTOML(path string, data map[string]any) error {
+	var raw map[string]any
+	if _, err := toml.DecodeFile(path, &raw); err != nil {
+		return err
+	}
+	mergeMaps(data, raw)
+	return nil
+}
+
+func mergeMaps(dst, src map[string]any) {
+	for k, v := range src {
+		if srcMap, ok := v.(map[string]any); ok {
+			if dstMap, ok := dst[k].(map[string]any); ok {
+				mergeMaps(dstMap, srcMap)
+				continue
+			}
+		}
+		dst[k] = v
+	}
+}
+
+// Env возвращает текущее окружение
+func (c *Config) Env() string { return c.env }
+
+// IsProd возвращает true для production
+func (c *Config) IsProd() bool { return c.env == "prod" }
+
+// IsDev возвращает true для dev/local
+func (c *Config) IsDev() bool { return c.env == "dev" || c.env == "local" }
+
+// Get возвращает значение по ключу
+func (c *Config) GetValue(key Key) any {
+	return getNestedValue(c.data, string(key))
+}
+
+func getNestedValue(data map[string]any, key string) any {
+	parts := splitKey(key)
+	current := any(data)
+
+	for _, part := range parts {
+		if m, ok := current.(map[string]any); ok {
+			current = m[part]
+		} else {
+			return nil
+		}
+	}
+	return current
+}
+
+func splitKey(key string) []string {
+	var parts []string
+	var current string
+	for _, r := range key {
+		if r == '.' {
+			if current != "" {
+				parts = append(parts, current)
+				current = ""
+			}
+		} else {
+			current += string(r)
+		}
+	}
+	if current != "" {
+		parts = append(parts, current)
+	}
+	return parts
+}
+
+// --- Методы доступа к значениям ---
+
+// Название сервиса
+func (c *Config) AppName() string {
+	v := c.GetValue(AppName)
+	if v == nil {
+		var zero string
+		return zero
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// Версия приложения
+func (c *Config) AppVersion() string {
+	v := c.GetValue(AppVersion)
+	if v == nil {
+		var zero string
+		return zero
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// Хост базы данных
+func (c *Config) DbHost() string {
+	v := c.GetValue(DbHost)
+	if v == nil {
+		var zero string
+		return zero
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// Время жизни неактивного соединения
+func (c *Config) DbMaxIdleTime() time.Duration {
+	v := c.GetValue(DbMaxIdleTime)
+	if v == nil {
+		var zero time.Duration
+		return zero
+	}
+	if s, ok := v.(string); ok {
+		d, _ := time.ParseDuration(s)
+		return d
+	}
+	return 0
+}
+
+// Имя базы данных
+func (c *Config) DbName() string {
+	v := c.GetValue(DbName)
+	if v == nil {
+		var zero string
+		return zero
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// Пароль (в dev можно хранить в конфиге)
+func (c *Config) DbPassword() string {
+	v := c.GetValue(DbPassword)
+	if v == nil {
+		var zero string
+		return zero
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// Размер пула соединений
+func (c *Config) DbPoolSize() int {
+	v := c.GetValue(DbPoolSize)
+	if v == nil {
+		var zero int
+		return zero
+	}
+	switch val := v.(type) {
+	case int:
+		return val
+	case int64:
+		return int(val)
+	case float64:
+		return int(val)
+	default:
+		return 0
+	}
+}
+
+// Порт PostgreSQL
+func (c *Config) DbPort() int {
+	v := c.GetValue(DbPort)
+	if v == nil {
+		var zero int
+		return zero
+	}
+	switch val := v.(type) {
+	case int:
+		return val
+	case int64:
+		return int(val)
+	case float64:
+		return int(val)
+	default:
+		return 0
+	}
+}
+
+// Пользователь БД
+func (c *Config) DbUser() string {
+	v := c.GetValue(DbUser)
+	if v == nil {
+		var zero string
+		return zero
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// Включить сбор метрик
+func (c *Config) FeaturesEnableMetrics() bool {
+	v := c.GetValue(FeaturesEnableMetrics)
+	if v == nil {
+		var zero bool
+		return zero
+	}
+	if b, ok := v.(bool); ok {
+		return b
+	}
+	return false
+}
+
+// Включить трейсинг
+func (c *Config) FeaturesEnableTracing() bool {
+	v := c.GetValue(FeaturesEnableTracing)
+	if v == nil {
+		var zero bool
+		return zero
+	}
+	if b, ok := v.(bool); ok {
+		return b
+	}
+	return false
+}
+
+// Максимальное количество одновременных соединений
+func (c *Config) LimitsMaxConnections() int {
+	v := c.GetValue(LimitsMaxConnections)
+	if v == nil {
+		var zero int
+		return zero
+	}
+	switch val := v.(type) {
+	case int:
+		return val
+	case int64:
+		return int(val)
+	case float64:
+		return int(val)
+	default:
+		return 0
+	}
+}
+
+// Максимальный размер запроса в байтах (10MB)
+func (c *Config) LimitsMaxRequestSize() int {
+	v := c.GetValue(LimitsMaxRequestSize)
+	if v == nil {
+		var zero int
+		return zero
+	}
+	switch val := v.(type) {
+	case int:
+		return val
+	case int64:
+		return int(val)
+	case float64:
+		return int(val)
+	default:
+		return 0
+	}
+}
+
+// Таймаут обработки запроса
+func (c *Config) LimitsRequestTimeout() time.Duration {
+	v := c.GetValue(LimitsRequestTimeout)
+	if v == nil {
+		var zero time.Duration
+		return zero
+	}
+	if s, ok := v.(string); ok {
+		d, _ := time.ParseDuration(s)
+		return d
+	}
+	return 0
+}
+
+// Формат вывода: text или json
+func (c *Config) LogFormat() string {
+	v := c.GetValue(LogFormat)
+	if v == nil {
+		var zero string
+		return zero
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// Уровень логирования: debug, info, warn, error
+func (c *Config) LogLevel() string {
+	v := c.GetValue(LogLevel)
+	if v == nil {
+		var zero string
+		return zero
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// Номер базы данных
+func (c *Config) RedisDb() int {
+	v := c.GetValue(RedisDb)
+	if v == nil {
+		var zero int
+		return zero
+	}
+	switch val := v.(type) {
+	case int:
+		return val
+	case int64:
+		return int(val)
+	case float64:
+		return int(val)
+	default:
+		return 0
+	}
+}
+
+// Хост Redis
+func (c *Config) RedisHost() string {
+	v := c.GetValue(RedisHost)
+	if v == nil {
+		var zero string
+		return zero
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// Порт Redis
+func (c *Config) RedisPort() int {
+	v := c.GetValue(RedisPort)
+	if v == nil {
+		var zero int
+		return zero
+	}
+	switch val := v.(type) {
+	case int:
+		return val
+	case int64:
+		return int(val)
+	case float64:
+		return int(val)
+	default:
+		return 0
+	}
+}
+
+// Адрес для прослушивания
+func (c *Config) ServerHost() string {
+	v := c.GetValue(ServerHost)
+	if v == nil {
+		var zero string
+		return zero
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// Порт сервера
+func (c *Config) ServerPort() int {
+	v := c.GetValue(ServerPort)
+	if v == nil {
+		var zero int
+		return zero
+	}
+	switch val := v.(type) {
+	case int:
+		return val
+	case int64:
+		return int(val)
+	case float64:
+		return int(val)
+	default:
+		return 0
+	}
+}
+
+// Таймаут на чтение запроса
+func (c *Config) ServerReadTimeout() time.Duration {
+	v := c.GetValue(ServerReadTimeout)
+	if v == nil {
+		var zero time.Duration
+		return zero
+	}
+	if s, ok := v.(string); ok {
+		d, _ := time.ParseDuration(s)
+		return d
+	}
+	return 0
+}
+
+// Таймаут на запись ответа
+func (c *Config) ServerWriteTimeout() time.Duration {
+	v := c.GetValue(ServerWriteTimeout)
+	if v == nil {
+		var zero time.Duration
+		return zero
+	}
+	if s, ok := v.(string); ok {
+		d, _ := time.ParseDuration(s)
+		return d
+	}
+	return 0
 }
