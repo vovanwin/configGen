@@ -95,18 +95,3 @@ type Server struct {
 	// Таймаут на запись ответа
 	WriteTimeout time.Duration `toml:"write_timeout"`
 }
-
-// Value содержит константные значения конфигурации (из value.toml)
-// Эти значения редко меняются и общие для всех окружений
-type Value struct {
-	// Информация о приложении
-	App App `toml:"app"`
-	Db  Db  `toml:"db"`
-	// Переключатели функций
-	Features Features `toml:"features"`
-	// Лимиты и ограничения
-	Limits Limits `toml:"limits"`
-	Log    Log    `toml:"log"`
-	Redis  Redis  `toml:"redis"`
-	Server Server `toml:"server"`
-}

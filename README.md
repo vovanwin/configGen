@@ -1,16 +1,6 @@
 # ConfigGen
 
-Генератор типобезопасных конфигураций для Go приложений. Создает Go структуры и загрузчики из TOML файлов конфигурации.
-
-## Возможности
-
-- **Типобезопасные конфиги** — генерирует Go структуры из TOML файлов
-- **Поддержка окружений** — local, dev, stg, prod
-- **Многослойная конфигурация** — базовые значения + окружение + локальные переопределения
-- **Поддержка Duration** — автоматический парсинг `"30s"`, `"5m"`, `"1h"`
-- **Валидация схемы** — гарантирует консистентность между конфигами окружений
-- **Интеграция с Vault** — заготовка для HashiCorp Vault (будущее)
-- **RTC** — заготовка для обновления конфигов в реальном времени (будущее)
+Генератор типобезопасных конфигураций для Go. Читает TOML файлы и генерирует Go структуры + загрузчик на основе [koanf](https://github.com/knadh/koanf).
 
 ## Установка
 
@@ -18,27 +8,61 @@
 go install github.com/vovanwin/configgen/cmd/configgen@latest
 ```
 
-## Быстрый старт
+## Как это работает
 
-### 1. Создайте структуру конфиг файлов
+ConfigGen анализирует ваши TOML файлы конфигурации и генерирует два файла:
+
+- **config.gen.go** — Go структуры (`Config`, `Value` и вложенные) с `toml:"..."` тегами
+- **loader.gen.go** — загрузчик на koanf с поддержкой окружений и мержа файлов
+
+### Логика генерации схемы
+
+Генератор берёт все файлы `config_*.toml` (кроме `config_local.toml`) и строит из них схему полей. Режим задаётся флагом `--mode`:
+
+- **intersect** (по умолчанию) — в сгенерированную структуру попадают только поля, которые есть **во всех** файлах конфигурации с одинаковым типом. Если в `config_dev.toml` есть поле `debug = true`, а в `config_prod.toml` его нет — поле не попадёт в структуру.
+- **union** — в структуру попадают **все** поля из всех файлов. При конфликте типов побеждает первый встреченный.
+
+После этого схема мержится с `value.toml` (если есть) через union — поля из обоих источников объединяются.
+
+**Когда появляются новые поля в сгенерированных структурах:**
+1. Вы добавили новую секцию или поле **во все** `config_*.toml` файлы (при `--mode=intersect`)
+2. Вы добавили поле **хотя бы в один** `config_*.toml` (при `--mode=union`)
+3. Вы добавили поле в `value.toml`
+
+**Когда поле пропадёт:**
+1. Вы удалили его из одного из `config_*.toml` при `--mode=intersect`
+2. Вы удалили его из всех `config_*.toml` при `--mode=union`
+
+### Поддерживаемые типы
+
+| TOML | Go | Пример |
+|------|-----|--------|
+| `"string"` | `string` | `host = "localhost"` |
+| `123` | `int` | `port = 8080` |
+| `1.5` | `float64` | `ratio = 1.5` |
+| `true` / `false` | `bool` | `debug = true` |
+| `"30s"`, `"5m"`, `"1h"` | `time.Duration` | `timeout = "30s"` |
+| `[1, 2, 3]` | `[]int` | `ports = [80, 443]` |
+| `["a", "b"]` | `[]string` | `hosts = ["a", "b"]` |
+| `[section]` | вложенная структура | `[server]` -> `Server` |
+
+Комментарии из TOML (`# ...`) переносятся в Go код как комментарии к полям.
+
+## Внедрение в проект
+
+### 1. Создайте конфиги
 
 ```
 your-service/
 ├── configs/
-│   ├── value.toml         # Константы (общие для всех окружений)
-│   ├── config_dev.toml    # Development
-│   ├── config_stg.toml    # Staging
-│   ├── config_prod.toml   # Production
-│   └── config_local.toml  # Локальные переопределения (не коммитить!)
-└── internal/
-    └── config/
-        ├── config.gen.go  # Сгенерированный
-        └── loader.gen.go  # Сгенерированный
+│   ├── value.toml           # Константы, общие для всех окружений
+│   ├── config_dev.toml      # Development
+│   ├── config_stg.toml      # Staging
+│   ├── config_prod.toml     # Production
+│   └── config_local.toml    # Локальные переопределения (добавьте в .gitignore)
 ```
 
-### 2. Создайте конфиги
-
-**value.toml** — константы, общие для всех окружений:
+**value.toml** — значения, которые не меняются между окружениями:
 ```toml
 [app]
 name = "my-service"
@@ -47,57 +71,39 @@ version = "1.0.0"
 [limits]
 max_connections = 1000
 request_timeout = "30s"
-
-[features]
-enable_metrics = true
-enable_tracing = true
 ```
 
-**config_dev.toml** — окружение разработки:
+**config_dev.toml**:
 ```toml
 [server]
 host = "localhost"
 port = 8080
 read_timeout = "5s"
-write_timeout = "10s"
 
 [db]
 host = "localhost"
 port = 5432
 name = "myapp_dev"
-user = "dev_user"
-password = "dev_password"
 pool_size = 5
-
-[log]
-level = "debug"
-format = "text"
 ```
 
-**config_prod.toml** — продакшн:
+**config_prod.toml** — те же секции и поля, но с production значениями:
 ```toml
 [server]
 host = "0.0.0.0"
 port = 80
 read_timeout = "15s"
-write_timeout = "60s"
 
 [db]
 host = "db-prod.internal"
 port = 5432
 name = "myapp_prod"
-user = "prod_user"
-password = ""  # Используйте Vault
 pool_size = 50
-
-[log]
-level = "warn"
-format = "json"
 ```
 
-### 3. Сгенерируйте код
+### 2. Добавьте go:generate
 
-Добавьте в main.go вашего сервиса:
+В `main.go` вашего сервиса:
 ```go
 //go:generate go run github.com/vovanwin/configgen/cmd/configgen --configs=./configs --output=./internal/config --package=config
 ```
@@ -107,7 +113,16 @@ format = "json"
 go generate ./...
 ```
 
-### 4. Используйте в приложении
+Это создаст `internal/config/config.gen.go` и `internal/config/loader.gen.go`.
+
+### 3. Добавьте зависимость koanf
+
+Сгенерированный загрузчик использует koanf:
+```bash
+go get github.com/knadh/koanf/v2 github.com/knadh/koanf/parsers/toml/v2 github.com/knadh/koanf/providers/file
+```
+
+### 4. Используйте в коде
 
 ```go
 package main
@@ -119,8 +134,6 @@ import (
 )
 
 func main() {
-    // Загрузка конфига на основе переменной окружения APP_ENV
-    // Порядок: value.toml -> config_{env}.toml -> config_local.toml (если есть)
     cfg, err := config.Load(&config.LoadOptions{
         ConfigDir:           "./configs",
         EnableLocalOverride: true,
@@ -129,181 +142,66 @@ func main() {
         log.Fatal(err)
     }
 
-    // Типобезопасный доступ к значениям
-    fmt.Printf("Сервер: %s:%d\n", cfg.Server.Host, cfg.Server.Port)
-    fmt.Printf("БД пул: %d\n", cfg.Db.PoolSize)
-    fmt.Printf("Таймаут чтения: %v\n", cfg.Server.ReadTimeout)
+    // Типобезопасный доступ
+    fmt.Printf("Server: %s:%d\n", cfg.Server.Host, cfg.Server.Port)
+    fmt.Printf("DB pool: %d\n", cfg.Db.PoolSize)
+    fmt.Printf("Read timeout: %v\n", cfg.Server.ReadTimeout) // time.Duration
+
+    // Константы из value.toml
+    values := config.GetValue()
+    fmt.Printf("App: %s v%s\n", values.App.Name, values.App.Version)
+
+    // Глобальный доступ (thread-safe)
+    currentCfg := config.Get()
+    _ = currentCfg
 
     // Проверка окружения
     if config.IsProduction() {
-        fmt.Println("Работаем в PRODUCTION")
+        // ...
     }
-
-    // Доступ к константам (из value.toml)
-    values := config.GetValue()
-    fmt.Printf("Приложение: %s v%s\n", values.App.Name, values.App.Version)
-
-    // Глобальный доступ к конфигу (thread-safe)
-    currentCfg := config.Get()
-    fmt.Printf("Текущее окружение: %s\n", config.GetEnv())
 }
 ```
 
-## Порядок загрузки конфигурации
+## Порядок загрузки (runtime)
 
 1. **value.toml** — базовые константы (опционально)
-2. **config_{env}.toml** — значения для конкретного окружения
-3. **config_local.toml** — локальные переопределения (опционально, не коммитить)
+2. **config_{env}.toml** — значения окружения (обязательно)
+3. **config_local.toml** — локальные переопределения (опционально)
 
-Более поздние файлы переопределяют более ранние. Окружение определяется переменной `APP_ENV`.
+Каждый следующий файл мержится поверх предыдущего. Окружение определяется из `LoadOptions.Environment` или переменной окружения `APP_ENV` (по умолчанию `dev`).
+
+## Сгенерированный API
+
+| Функция          | Описание                              |
+|------------------|---------------------------------------|
+| `Load(opts)`     | Загрузить конфигурацию                |
+| `MustLoad(opts)` | Загрузить или panic                   |
+| `Get()`          | Текущий конфиг (thread-safe)          |
+| `GetValue()`     | Константы из value.toml (thread-safe) |
+| `GetEnv()`       | Текущее окружение                     |
+| `IsProduction()` | `true` если `prod`                    |
+| `IsStg()`        | `true` если `stg`                     |
+| `IsLocal()`      | `true` если `local`                   |
 
 ## Флаги CLI
 
 ```
---configs      Директория с конфиг файлами (по умолчанию: ./configs)
---output       Директория для сгенерированного кода (по умолчанию: ./internal/config)
---package      Имя пакета (по умолчанию: config)
---env-prefix   Имя переменной окружения (по умолчанию: APP_ENV)
---with-loader  Генерировать loader.gen.go (по умолчанию: true)
---with-vault   Включить заготовку для Vault (по умолчанию: false)
---with-rtc     Включить заготовку для RTC (по умолчанию: false)
---mode         Режим схемы: intersect или union (по умолчанию: intersect)
+--configs      Директория с TOML файлами (./configs)
+--output       Куда писать сгенерированный код (./internal/config)
+--package      Имя Go пакета (config)
+--env-prefix   Переменная окружения для определения env (APP_ENV)
+--with-loader  Генерировать loader.gen.go (true)
+--mode         Режим схемы: intersect | union (intersect)
 ```
-
-### Режимы схемы
-
-- **intersect** (по умолчанию) — только поля, присутствующие во ВСЕХ конфиг файлах
-- **union** — все поля из всех конфигов (при конфликте типов побеждает первый)
-
-## Окружения
-
-| Окружение | APP_ENV | Описание |
-|-----------|---------|----------|
-| Local | `local` | Локальная разработка |
-| Development | `dev` | Сервер разработки |
-| Staging | `stg` | Предпродакшн |
-| Production | `prod` | Продакшн |
-
-## Локальные переопределения
-
-Создайте `config_local.toml` для персональных настроек:
-
-```toml
-# Переопределение БД для локального Docker
-[db]
-host = "127.0.0.1"
-port = 5433
-
-# Включить debug логирование
-[log]
-level = "debug"
-```
-
-Добавьте в `.gitignore`:
-```
-config_local.toml
-```
-
-## Интеграция с Vault (заготовка)
-
-Включите заготовку для Vault:
-```bash
-configgen --with-vault ...
-```
-
-Использование:
-```go
-cfg, err := config.Load(&config.LoadOptions{
-    VaultEnabled: true,
-    VaultConfig: &config.VaultConfig{
-        Address: "https://vault.internal:8200",
-        Token:   os.Getenv("VAULT_TOKEN"),
-        Path:    "secret/data/myapp",
-    },
-})
-```
-
-## Real-Time Config (заготовка)
-
-Включите заготовку для RTC:
-```bash
-configgen --with-rtc ...
-```
-
-Использование:
-```go
-cfg, err := config.Load(&config.LoadOptions{
-    RTCEnabled: true,
-    RTCConfig: &config.RTCConfig{
-        Endpoint:     "https://config-service.internal/api/config",
-        PollInterval: "30s",
-    },
-    OnChange: func(newCfg *config.Config) {
-        log.Println("Конфиг обновлен!")
-    },
-})
-```
-
-## Поддерживаемые типы
-
-| Тип TOML | Тип Go |
-|----------|--------|
-| `"string"` | `string` |
-| `123` | `int` |
-| `1.5` | `float64` |
-| `true/false` | `bool` |
-| `"30s"`, `"5m"` | `time.Duration` |
-| `[1, 2, 3]` | `[]int` |
-| `["a", "b"]` | `[]string` |
-| `[section]` | вложенная структура |
-
-## Структура проекта
-
-```
-configgen/
-├── cmd/configgen/        # CLI утилита
-├── internal/
-│   ├── generator/        # Генерация кода
-│   │   └── templates/    # Go шаблоны
-│   ├── parser/           # TOML парсер
-│   └── schema/           # Операции со схемой
-├── pkg/types/            # Общие типы
-└── example/service/      # Пример использования
-```
-
-## Сгенерированные файлы
-
-### config.gen.go
-
-Содержит:
-- `Config` — основная структура конфигурации
-- Вложенные структуры для каждой секции (Server, Db, Log и т.д.)
-- `Value` — структура для константных значений
-
-### loader.gen.go
-
-Содержит:
-- `Load(opts)` — загрузка конфигурации
-- `MustLoad(opts)` — загрузка или panic
-- `Get()` — получить текущий конфиг (thread-safe)
-- `GetValue()` — получить константы (thread-safe)
-- `GetEnv()` — получить текущее окружение
-- `IsProduction()` — проверка на продакшн
-- `IsDevelopment()` — проверка на dev/local
 
 ## Пример
 
-Смотрите директорию `example/service/` для полного примера использования.
+Полный рабочий пример в `example/service/`.
 
 ```bash
-# Сгенерировать конфиг
-go run ./cmd/configgen --configs=./example/service/configs --output=./example/service/internal/config --package=config
+# Генерация + тесты + сборка
+task all
 
-# Запустить пример
-cd example/service
-APP_ENV=dev go run .
+# Запуск примера
+task example:run
 ```
-
-## Лицензия
-
-MIT

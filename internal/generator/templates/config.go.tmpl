@@ -37,15 +37,3 @@ type {{ $f.Name }} struct {
 }
 {{- end }}
 {{- end }}
-
-// Value содержит константные значения конфигурации (из value.toml)
-// Эти значения редко меняются и общие для всех окружений
-type Value struct {
-{{- range $i, $k := .Keys }}
-{{- $field := index $.Fields $k }}
-{{- if hasComment $field.Comment }}
-	{{ formatComment $field.Comment }}
-{{- end }}
-	{{ $field.Name }} {{ GoType $field }} `toml:"{{ $field.TOMLName }}"`
-{{- end }}
-}

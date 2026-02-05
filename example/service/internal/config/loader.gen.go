@@ -25,7 +25,6 @@ const (
 
 var (
 	globalConfig *Config
-	globalValue  *Value
 	configMu     sync.RWMutex
 	currentEnv   Environment
 )
@@ -44,6 +43,7 @@ type LoadOptions struct {
 }
 
 // Load загружает конфигурацию с заданными опциями
+// Порядок: value.toml -> config_{env}.toml -> config_local.toml
 func Load(opts *LoadOptions) (*Config, error) {
 	if opts == nil {
 		opts = &LoadOptions{
@@ -61,33 +61,23 @@ func Load(opts *LoadOptions) (*Config, error) {
 		env = Environment(envStr)
 	}
 
-	configMu.Lock()
-	defer configMu.Unlock()
-
-	currentEnv = env
-
-	// Загружаем value.toml (константы)
-	valuePath := filepath.Join(opts.ConfigDir, "value.toml")
-	if _, err := os.Stat(valuePath); err == nil {
-		kv := koanf.New(".")
-		if err := kv.Load(file.Provider(valuePath), toml.Parser()); err != nil {
-			return nil, fmt.Errorf("загрузка value.toml: %w", err)
-		}
-		value := &Value{}
-		if err := kv.UnmarshalWithConf("", value, koanf.UnmarshalConf{Tag: "toml"}); err != nil {
-			return nil, fmt.Errorf("декодирование value.toml: %w", err)
-		}
-		globalValue = value
-	}
-
-	// Загружаем config_{env}.toml + config_local.toml с автоматическим мержем
 	k := koanf.New(".")
 
+	// 1. value.toml (константы, опционально)
+	valuePath := filepath.Join(opts.ConfigDir, "value.toml")
+	if _, err := os.Stat(valuePath); err == nil {
+		if err := k.Load(file.Provider(valuePath), toml.Parser()); err != nil {
+			return nil, fmt.Errorf("загрузка value.toml: %w", err)
+		}
+	}
+
+	// 2. config_{env}.toml (обязательно)
 	envPath := filepath.Join(opts.ConfigDir, fmt.Sprintf("config_%s.toml", env))
 	if err := k.Load(file.Provider(envPath), toml.Parser()); err != nil {
 		return nil, fmt.Errorf("загрузка config_%s.toml: %w", env, err)
 	}
 
+	// 3. config_local.toml (локальные переопределения, опционально)
 	if opts.EnableLocalOverride {
 		localPath := filepath.Join(opts.ConfigDir, "config_local.toml")
 		if _, err := os.Stat(localPath); err == nil {
@@ -102,7 +92,11 @@ func Load(opts *LoadOptions) (*Config, error) {
 		return nil, fmt.Errorf("декодирование конфига: %w", err)
 	}
 
+	configMu.Lock()
 	globalConfig = cfg
+	currentEnv = env
+	configMu.Unlock()
+
 	return cfg, nil
 }
 
@@ -120,13 +114,6 @@ func Get() *Config {
 	configMu.RLock()
 	defer configMu.RUnlock()
 	return globalConfig
-}
-
-// GetValue возвращает константные значения (потокобезопасно)
-func GetValue() *Value {
-	configMu.RLock()
-	defer configMu.RUnlock()
-	return globalValue
 }
 
 // GetEnv возвращает текущее окружение
@@ -147,7 +134,7 @@ func IsStg() bool {
 	return env == EnvStaging
 }
 
-// IsLocal ...
+// IsStg ...
 func IsLocal() bool {
 	env := GetEnv()
 	return env == EnvLocal
