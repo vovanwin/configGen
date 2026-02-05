@@ -129,8 +129,12 @@ func IsProduction() bool {
 	return GetEnv() == EnvProduction
 }
 
-// IsDevelopment возвращает true если работаем в dev или local
-func IsDevelopment() bool {
-	env := GetEnv()
-	return env == EnvDev || env == EnvLocal
+// IsStg возвращает true если работаем в staging
+func IsStg() bool {
+	return GetEnv() == EnvStaging
+}
+
+// IsLocal возвращает true если работаем локально
+func IsLocal() bool {
+	return GetEnv() == EnvLocal
 }

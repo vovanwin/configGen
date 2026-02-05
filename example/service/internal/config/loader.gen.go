@@ -19,6 +19,7 @@ type Environment string
 
 const (
 	EnvLocal      Environment = "local"
+	EnvDev        Environment = "dev"
 	EnvStaging    Environment = "stg"
 	EnvProduction Environment = "prod"
 )
@@ -128,14 +129,12 @@ func IsProduction() bool {
 	return GetEnv() == EnvProduction
 }
 
-// IsStg ...
+// IsStg возвращает true если работаем в staging
 func IsStg() bool {
-	env := GetEnv()
-	return env == EnvStaging
+	return GetEnv() == EnvStaging
 }
 
-// IsStg ...
+// IsLocal возвращает true если работаем локально
 func IsLocal() bool {
-	env := GetEnv()
-	return env == EnvLocal
+	return GetEnv() == EnvLocal
 }
