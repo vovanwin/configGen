@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/BurntSushi/toml"
+	"github.com/knadh/koanf/parsers/toml/v2"
+	"github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/v2"
 )
 
 // Environment представляет окружение развертывания
@@ -17,20 +19,8 @@ type Environment string
 
 const (
 	EnvLocal      Environment = "local"
-	EnvDev        Environment = "dev"
 	EnvStaging    Environment = "stg"
 	EnvProduction Environment = "prod"
-)
-
-// Source указывает откуда пришло значение конфига
-type Source int
-
-const (
-	SourceDefault Source = iota // Из value.toml
-	SourceEnv                   // Из config_{env}.toml
-	SourceLocal                 // Из config_local.toml
-	SourceVault                 // Из Vault (будущее)
-	SourceRTC                   // Из RTC (будущее)
 )
 
 var (
@@ -53,21 +43,15 @@ type LoadOptions struct {
 	EnableLocalOverride bool
 }
 
-// DefaultLoadOptions возвращает настройки по умолчанию
-func DefaultLoadOptions() *LoadOptions {
-	return &LoadOptions{
-		ConfigDir:           "./configs",
-		EnableLocalOverride: true,
-	}
-}
-
 // Load загружает конфигурацию с заданными опциями
 func Load(opts *LoadOptions) (*Config, error) {
 	if opts == nil {
-		opts = DefaultLoadOptions()
+		opts = &LoadOptions{
+			ConfigDir:           "./configs",
+			EnableLocalOverride: true,
+		}
 	}
 
-	// Определяем окружение
 	env := opts.Environment
 	if env == "" {
 		envStr := os.Getenv("APP_ENV")
@@ -82,35 +66,43 @@ func Load(opts *LoadOptions) (*Config, error) {
 
 	currentEnv = env
 
-	// 1. Загружаем value.toml (базовые константы)
+	// Загружаем value.toml (константы)
 	valuePath := filepath.Join(opts.ConfigDir, "value.toml")
-	value := &Value{}
 	if _, err := os.Stat(valuePath); err == nil {
-		if _, err := toml.DecodeFile(valuePath, value); err != nil {
+		kv := koanf.New(".")
+		if err := kv.Load(file.Provider(valuePath), toml.Parser()); err != nil {
+			return nil, fmt.Errorf("загрузка value.toml: %w", err)
+		}
+		value := &Value{}
+		if err := kv.UnmarshalWithConf("", value, koanf.UnmarshalConf{Tag: "toml"}); err != nil {
 			return nil, fmt.Errorf("декодирование value.toml: %w", err)
 		}
+		globalValue = value
 	}
-	globalValue = value
 
-	// 2. Загружаем конфиг окружения
-	cfg := &Config{}
+	// Загружаем config_{env}.toml + config_local.toml с автоматическим мержем
+	k := koanf.New(".")
+
 	envPath := filepath.Join(opts.ConfigDir, fmt.Sprintf("config_%s.toml", env))
-	if _, err := toml.DecodeFile(envPath, cfg); err != nil {
-		return nil, fmt.Errorf("декодирование config_%s.toml: %w", env, err)
+	if err := k.Load(file.Provider(envPath), toml.Parser()); err != nil {
+		return nil, fmt.Errorf("загрузка config_%s.toml: %w", env, err)
 	}
 
-	// 3. Загружаем локальные переопределения (опционально)
 	if opts.EnableLocalOverride {
 		localPath := filepath.Join(opts.ConfigDir, "config_local.toml")
 		if _, err := os.Stat(localPath); err == nil {
-			if _, err := toml.DecodeFile(localPath, cfg); err != nil {
-				return nil, fmt.Errorf("декодирование config_local.toml: %w", err)
+			if err := k.Load(file.Provider(localPath), toml.Parser()); err != nil {
+				return nil, fmt.Errorf("загрузка config_local.toml: %w", err)
 			}
 		}
 	}
 
-	globalConfig = cfg
+	cfg := &Config{}
+	if err := k.UnmarshalWithConf("", cfg, koanf.UnmarshalConf{Tag: "toml"}); err != nil {
+		return nil, fmt.Errorf("декодирование конфига: %w", err)
+	}
 
+	globalConfig = cfg
 	return cfg, nil
 }
 
@@ -149,8 +141,14 @@ func IsProduction() bool {
 	return GetEnv() == EnvProduction
 }
 
-// IsDevelopment возвращает true если работаем в dev или local
-func IsDevelopment() bool {
+// IsStg ...
+func IsStg() bool {
 	env := GetEnv()
-	return env == EnvDev || env == EnvLocal
+	return env == EnvStaging
+}
+
+// IsLocal ...
+func IsLocal() bool {
+	env := GetEnv()
+	return env == EnvLocal
 }

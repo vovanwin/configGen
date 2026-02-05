@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/vovanwin/configgen/pkg/types"
+	"github.com/vovanwin/configgen/internal/model"
 )
 
 // commentMap хранит комментарии для ключей (section.key -> comment)
 type commentMap map[string]string
 
-// ParseFile читает TOML файл и возвращает map[string]*types.Field с деревом полей
-func ParseFile(path string) (map[string]*types.Field, error) {
+// ParseFile читает TOML файл и возвращает map[string]*model.Field с деревом полей
+func ParseFile(path string) (map[string]*model.Field, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("чтение файла %s: %w", path, err)
@@ -102,8 +102,8 @@ func extractComments(path string) (commentMap, error) {
 }
 
 // buildFieldsWithComments строит дерево полей из распарсенного TOML с комментариями
-func buildFieldsWithComments(node map[string]any, comments commentMap, prefix string) (map[string]*types.Field, error) {
-	res := make(map[string]*types.Field)
+func buildFieldsWithComments(node map[string]any, comments commentMap, prefix string) (map[string]*model.Field, error) {
+	res := make(map[string]*model.Field)
 
 	for k, v := range node {
 		fullKey := k
@@ -121,35 +121,35 @@ func buildFieldsWithComments(node map[string]any, comments commentMap, prefix st
 }
 
 // detectFieldWithComment определяет тип поля и создает Field структуру с комментарием
-func detectFieldWithComment(key string, val any, comments commentMap, fullKey string) (*types.Field, error) {
+func detectFieldWithComment(key string, val any, comments commentMap, fullKey string) (*model.Field, error) {
 	comment := comments[fullKey]
 
 	switch v := val.(type) {
 	case string:
 		// Проверяем похоже ли на duration
 		if _, err := time.ParseDuration(v); err == nil && containsDurationSuffix(v) {
-			return &types.Field{Name: ToGoName(key), TOMLName: key, Kind: types.KindDuration, Comment: comment}, nil
+			return &model.Field{Name: ToGoName(key), TOMLName: key, Kind: model.KindDuration, Comment: comment}, nil
 		}
-		return &types.Field{Name: ToGoName(key), TOMLName: key, Kind: types.KindString, Comment: comment}, nil
+		return &model.Field{Name: ToGoName(key), TOMLName: key, Kind: model.KindString, Comment: comment}, nil
 
 	case int, int64:
-		return &types.Field{Name: ToGoName(key), TOMLName: key, Kind: types.KindInt, Comment: comment}, nil
+		return &model.Field{Name: ToGoName(key), TOMLName: key, Kind: model.KindInt, Comment: comment}, nil
 
 	case float32, float64:
-		return &types.Field{Name: ToGoName(key), TOMLName: key, Kind: types.KindFloat, Comment: comment}, nil
+		return &model.Field{Name: ToGoName(key), TOMLName: key, Kind: model.KindFloat, Comment: comment}, nil
 
 	case bool:
-		return &types.Field{Name: ToGoName(key), TOMLName: key, Kind: types.KindBool, Comment: comment}, nil
+		return &model.Field{Name: ToGoName(key), TOMLName: key, Kind: model.KindBool, Comment: comment}, nil
 
 	case []any:
 		if len(v) == 0 {
-			return &types.Field{Name: ToGoName(key), TOMLName: key, Kind: types.KindSlice, ItemKind: types.KindString, Comment: comment}, nil
+			return &model.Field{Name: ToGoName(key), TOMLName: key, Kind: model.KindSlice, ItemKind: model.KindString, Comment: comment}, nil
 		}
 		itemKind := detectSimpleKind(v[0])
-		return &types.Field{Name: ToGoName(key), TOMLName: key, Kind: types.KindSlice, ItemKind: itemKind, Comment: comment}, nil
+		return &model.Field{Name: ToGoName(key), TOMLName: key, Kind: model.KindSlice, ItemKind: itemKind, Comment: comment}, nil
 
 	case map[string]any:
-		children := make(map[string]*types.Field)
+		children := make(map[string]*model.Field)
 		for kk, vv := range v {
 			childKey := fullKey + "." + kk
 			cf, err := detectFieldWithComment(kk, vv, comments, childKey)
@@ -158,7 +158,7 @@ func detectFieldWithComment(key string, val any, comments commentMap, fullKey st
 			}
 			children[kk] = cf
 		}
-		return &types.Field{Name: ToGoName(key), TOMLName: key, Kind: types.KindObject, Children: children, Comment: comment}, nil
+		return &model.Field{Name: ToGoName(key), TOMLName: key, Kind: model.KindObject, Children: children, Comment: comment}, nil
 
 	default:
 		return nil, fmt.Errorf("неподдерживаемый тип для ключа %s: %T", key, val)
@@ -166,18 +166,18 @@ func detectFieldWithComment(key string, val any, comments commentMap, fullKey st
 }
 
 // detectSimpleKind определяет Kind для простых типов
-func detectSimpleKind(val any) types.Kind {
+func detectSimpleKind(val any) model.Kind {
 	switch val.(type) {
 	case string:
-		return types.KindString
+		return model.KindString
 	case int, int64:
-		return types.KindInt
+		return model.KindInt
 	case float32, float64:
-		return types.KindFloat
+		return model.KindFloat
 	case bool:
-		return types.KindBool
+		return model.KindBool
 	default:
-		return types.KindString
+		return model.KindString
 	}
 }
 

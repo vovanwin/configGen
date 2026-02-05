@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/BurntSushi/toml"
+	"github.com/knadh/koanf/parsers/toml/v2"
+	"github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/v2"
 )
 
 // Environment представляет окружение развертывания
@@ -20,17 +22,6 @@ const (
 	EnvDev        Environment = "dev"
 	EnvStaging    Environment = "stg"
 	EnvProduction Environment = "prod"
-)
-
-// Source указывает откуда пришло значение конфига
-type Source int
-
-const (
-	SourceDefault Source = iota // Из value.toml
-	SourceEnv                   // Из config_{env}.toml
-	SourceLocal                 // Из config_local.toml
-	SourceVault                 // Из Vault (будущее)
-	SourceRTC                   // Из RTC (будущее)
 )
 
 var (
@@ -51,86 +42,17 @@ type LoadOptions struct {
 
 	// EnableLocalOverride позволяет config_local.toml переопределять значения
 	EnableLocalOverride bool
-{{ if .WithVault }}
-	// VaultEnabled включает интеграцию с Vault
-	VaultEnabled bool
-
-	// VaultConfig настройки подключения к Vault
-	VaultConfig *VaultConfig
-{{ end }}
-{{ if .WithRTC }}
-	// RTCEnabled включает обновления конфига в реальном времени
-	RTCEnabled bool
-
-	// RTCConfig настройки RTC
-	RTCConfig *RTCConfig
-
-	// OnChange колбэк при изменении конфига
-	OnChange func(*Config)
-{{ end }}
-}
-{{ if .WithVault }}
-// VaultConfig настройки Vault (заготовка)
-type VaultConfig struct {
-	Address   string
-	Token     string
-	Path      string
-	Namespace string
-}
-
-// loadFromVault загружает секреты из Vault (заготовка)
-func loadFromVault(cfg *Config, vc *VaultConfig) error {
-	// TODO: Реализовать интеграцию с Vault
-	// Пример:
-	// client, err := vault.NewClient(&vault.Config{Address: vc.Address})
-	// if err != nil { return err }
-	// secret, err := client.Logical().Read(vc.Path)
-	// if err != nil { return err }
-	// Применить секреты к cfg...
-	return nil
-}
-{{ end }}
-{{ if .WithRTC }}
-// RTCConfig настройки real-time config (заготовка)
-type RTCConfig struct {
-	Endpoint     string
-	PollInterval string // например "30s"
-	UseWebSocket bool
-}
-
-// startRTCWatcher запускает наблюдение за изменениями конфига (заготовка)
-func startRTCWatcher(opts *LoadOptions) error {
-	// TODO: Реализовать RTC
-	// Пример с polling:
-	// go func() {
-	//     ticker := time.NewTicker(interval)
-	//     for range ticker.C {
-	//         newCfg, err := fetchRemoteConfig(opts.RTCConfig.Endpoint)
-	//         if err != nil { continue }
-	//         configMu.Lock()
-	//         globalConfig = newCfg
-	//         configMu.Unlock()
-	//         if opts.OnChange != nil { opts.OnChange(newCfg) }
-	//     }
-	// }()
-	return nil
-}
-{{ end }}
-// DefaultLoadOptions возвращает настройки по умолчанию
-func DefaultLoadOptions() *LoadOptions {
-	return &LoadOptions{
-		ConfigDir:           "./configs",
-		EnableLocalOverride: true,
-	}
 }
 
 // Load загружает конфигурацию с заданными опциями
 func Load(opts *LoadOptions) (*Config, error) {
 	if opts == nil {
-		opts = DefaultLoadOptions()
+		opts = &LoadOptions{
+			ConfigDir:           "./configs",
+			EnableLocalOverride: true,
+		}
 	}
 
-	// Определяем окружение
 	env := opts.Environment
 	if env == "" {
 		envStr := os.Getenv("{{ .EnvPrefix }}")
@@ -145,49 +67,43 @@ func Load(opts *LoadOptions) (*Config, error) {
 
 	currentEnv = env
 
-	// 1. Загружаем value.toml (базовые константы)
+	// Загружаем value.toml (константы)
 	valuePath := filepath.Join(opts.ConfigDir, "value.toml")
-	value := &Value{}
 	if _, err := os.Stat(valuePath); err == nil {
-		if _, err := toml.DecodeFile(valuePath, value); err != nil {
+		kv := koanf.New(".")
+		if err := kv.Load(file.Provider(valuePath), toml.Parser()); err != nil {
+			return nil, fmt.Errorf("загрузка value.toml: %w", err)
+		}
+		value := &Value{}
+		if err := kv.UnmarshalWithConf("", value, koanf.UnmarshalConf{Tag: "toml"}); err != nil {
 			return nil, fmt.Errorf("декодирование value.toml: %w", err)
 		}
+		globalValue = value
 	}
-	globalValue = value
 
-	// 2. Загружаем конфиг окружения
-	cfg := &Config{}
+	// Загружаем config_{env}.toml + config_local.toml с автоматическим мержем
+	k := koanf.New(".")
+
 	envPath := filepath.Join(opts.ConfigDir, fmt.Sprintf("config_%s.toml", env))
-	if _, err := toml.DecodeFile(envPath, cfg); err != nil {
-		return nil, fmt.Errorf("декодирование config_%s.toml: %w", env, err)
+	if err := k.Load(file.Provider(envPath), toml.Parser()); err != nil {
+		return nil, fmt.Errorf("загрузка config_%s.toml: %w", env, err)
 	}
 
-	// 3. Загружаем локальные переопределения (опционально)
 	if opts.EnableLocalOverride {
 		localPath := filepath.Join(opts.ConfigDir, "config_local.toml")
 		if _, err := os.Stat(localPath); err == nil {
-			if _, err := toml.DecodeFile(localPath, cfg); err != nil {
-				return nil, fmt.Errorf("декодирование config_local.toml: %w", err)
+			if err := k.Load(file.Provider(localPath), toml.Parser()); err != nil {
+				return nil, fmt.Errorf("загрузка config_local.toml: %w", err)
 			}
 		}
 	}
-{{ if .WithVault }}
-	// 4. Загружаем секреты из Vault (если включено)
-	if opts.VaultEnabled && opts.VaultConfig != nil {
-		if err := loadFromVault(cfg, opts.VaultConfig); err != nil {
-			return nil, fmt.Errorf("загрузка из vault: %w", err)
-		}
+
+	cfg := &Config{}
+	if err := k.UnmarshalWithConf("", cfg, koanf.UnmarshalConf{Tag: "toml"}); err != nil {
+		return nil, fmt.Errorf("декодирование конфига: %w", err)
 	}
-{{ end }}
+
 	globalConfig = cfg
-{{ if .WithRTC }}
-	// 5. Запускаем RTC watcher (если включено)
-	if opts.RTCEnabled && opts.RTCConfig != nil {
-		if err := startRTCWatcher(opts); err != nil {
-			return nil, fmt.Errorf("запуск rtc watcher: %w", err)
-		}
-	}
-{{ end }}
 	return cfg, nil
 }
 

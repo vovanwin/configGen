@@ -1,6 +1,44 @@
 version: '3'
 
-# Глобальные переменные проекта
 vars:
+  EXAMPLE_DIR: ./example/service
+  EXAMPLE_CONFIGS: ./example/service/configs
+  EXAMPLE_OUTPUT: ./example/service/internal/config
+
+env:
+  APP_ENV: local
 
 tasks:
+  test:
+    desc: Запуск всех тестов
+    cmds:
+      - go test ./...
+
+  build:
+    desc: Сборка configgen
+    cmds:
+      - go build ./cmd/configgen
+
+  generate:
+    desc: Генерация конфигов для example/service
+    cmds:
+      - go run ./cmd/configgen --configs={{.EXAMPLE_CONFIGS}} --output={{.EXAMPLE_OUTPUT}} --package=config
+
+  example:run:
+    desc: Запуск example/service
+    dir: "{{.EXAMPLE_DIR}}"
+    cmds:
+      - go run main.go
+
+  example:build:
+    desc: Сборка example/service
+    dir: "{{.EXAMPLE_DIR}}"
+    cmds:
+      - go build ./...
+
+  all:
+    desc: Тесты + генерация + сборка example
+    cmds:
+      - task: test
+      - task: generate
+      - task: example:build

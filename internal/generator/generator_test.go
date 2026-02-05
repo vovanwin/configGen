@@ -6,23 +6,23 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vovanwin/configgen/pkg/types"
+	"github.com/vovanwin/configgen/internal/model"
 )
 
 func TestGoType(t *testing.T) {
 	tests := []struct {
-		field    *types.Field
+		field    *model.Field
 		expected string
 	}{
-		{&types.Field{Kind: types.KindString}, "string"},
-		{&types.Field{Kind: types.KindInt}, "int"},
-		{&types.Field{Kind: types.KindFloat}, "float64"},
-		{&types.Field{Kind: types.KindBool}, "bool"},
-		{&types.Field{Kind: types.KindDuration}, "time.Duration"},
-		{&types.Field{Kind: types.KindSlice, ItemKind: types.KindString}, "[]string"},
-		{&types.Field{Kind: types.KindSlice, ItemKind: types.KindInt}, "[]int"},
-		{&types.Field{Kind: types.KindObject, TOMLName: "server"}, "Server"},
-		{&types.Field{Kind: types.KindObject, TOMLName: "my_config"}, "MyConfig"},
+		{&model.Field{Kind: model.KindString}, "string"},
+		{&model.Field{Kind: model.KindInt}, "int"},
+		{&model.Field{Kind: model.KindFloat}, "float64"},
+		{&model.Field{Kind: model.KindBool}, "bool"},
+		{&model.Field{Kind: model.KindDuration}, "time.Duration"},
+		{&model.Field{Kind: model.KindSlice, ItemKind: model.KindString}, "[]string"},
+		{&model.Field{Kind: model.KindSlice, ItemKind: model.KindInt}, "[]int"},
+		{&model.Field{Kind: model.KindObject, TOMLName: "server"}, "Server"},
+		{&model.Field{Kind: model.KindObject, TOMLName: "my_config"}, "MyConfig"},
 	}
 
 	for _, tt := range tests {
@@ -75,32 +75,29 @@ func TestSortedKeys(t *testing.T) {
 }
 
 func TestNeedsTime(t *testing.T) {
-	// Без Duration
-	fieldsNoDuration := map[string]*types.Field{
-		"host": {Kind: types.KindString},
-		"port": {Kind: types.KindInt},
+	fieldsNoDuration := map[string]*model.Field{
+		"host": {Kind: model.KindString},
+		"port": {Kind: model.KindInt},
 	}
 
 	if needsTime(fieldsNoDuration) {
 		t.Error("needsTime должен вернуть false когда нет Duration полей")
 	}
 
-	// С Duration
-	fieldsWithDuration := map[string]*types.Field{
-		"host":    {Kind: types.KindString},
-		"timeout": {Kind: types.KindDuration},
+	fieldsWithDuration := map[string]*model.Field{
+		"host":    {Kind: model.KindString},
+		"timeout": {Kind: model.KindDuration},
 	}
 
 	if !needsTime(fieldsWithDuration) {
 		t.Error("needsTime должен вернуть true когда есть Duration поле")
 	}
 
-	// Вложенный Duration
-	fieldsNestedDuration := map[string]*types.Field{
+	fieldsNestedDuration := map[string]*model.Field{
 		"server": {
-			Kind: types.KindObject,
-			Children: map[string]*types.Field{
-				"timeout": {Kind: types.KindDuration},
+			Kind: model.KindObject,
+			Children: map[string]*model.Field{
+				"timeout": {Kind: model.KindDuration},
 			},
 		},
 	}
@@ -113,18 +110,18 @@ func TestNeedsTime(t *testing.T) {
 func TestGenerate(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	fields := map[string]*types.Field{
+	fields := map[string]*model.Field{
 		"server": {
 			Name:     "Server",
 			TOMLName: "server",
-			Kind:     types.KindObject,
-			Children: map[string]*types.Field{
-				"host":    {Name: "Host", TOMLName: "host", Kind: types.KindString},
-				"port":    {Name: "Port", TOMLName: "port", Kind: types.KindInt},
-				"timeout": {Name: "Timeout", TOMLName: "timeout", Kind: types.KindDuration},
+			Kind:     model.KindObject,
+			Children: map[string]*model.Field{
+				"host":    {Name: "Host", TOMLName: "host", Kind: model.KindString},
+				"port":    {Name: "Port", TOMLName: "port", Kind: model.KindInt},
+				"timeout": {Name: "Timeout", TOMLName: "timeout", Kind: model.KindDuration},
 			},
 		},
-		"debug": {Name: "Debug", TOMLName: "debug", Kind: types.KindBool},
+		"debug": {Name: "Debug", TOMLName: "debug", Kind: model.KindBool},
 	}
 
 	opts := Options{
@@ -132,8 +129,6 @@ func TestGenerate(t *testing.T) {
 		PackageName: "testconfig",
 		EnvPrefix:   "TEST_ENV",
 		WithLoader:  true,
-		WithVault:   false,
-		WithRTC:     false,
 	}
 
 	err := Generate(opts, fields)
@@ -148,7 +143,6 @@ func TestGenerate(t *testing.T) {
 		t.Fatalf("не удалось прочитать config.gen.go: %v", err)
 	}
 
-	// Проверяем содержимое
 	configStr := string(configContent)
 
 	if !strings.Contains(configStr, "package testconfig") {
@@ -191,13 +185,17 @@ func TestGenerate(t *testing.T) {
 	if !strings.Contains(loaderStr, "TEST_ENV") {
 		t.Error("loader.gen.go должен использовать правильный EnvPrefix")
 	}
+
+	if !strings.Contains(loaderStr, "koanf") {
+		t.Error("loader.gen.go должен использовать koanf")
+	}
 }
 
 func TestGenerateWithoutLoader(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	fields := map[string]*types.Field{
-		"host": {Name: "Host", TOMLName: "host", Kind: types.KindString},
+	fields := map[string]*model.Field{
+		"host": {Name: "Host", TOMLName: "host", Kind: model.KindString},
 	}
 
 	opts := Options{
@@ -211,53 +209,13 @@ func TestGenerateWithoutLoader(t *testing.T) {
 		t.Fatalf("Generate вернул ошибку: %v", err)
 	}
 
-	// config.gen.go должен существовать
 	configPath := filepath.Join(tmpDir, "config.gen.go")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		t.Error("config.gen.go должен быть создан")
 	}
 
-	// loader.gen.go НЕ должен существовать
 	loaderPath := filepath.Join(tmpDir, "loader.gen.go")
 	if _, err := os.Stat(loaderPath); !os.IsNotExist(err) {
 		t.Error("loader.gen.go не должен быть создан когда WithLoader=false")
-	}
-}
-
-func TestGenerateWithVaultAndRTC(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	fields := map[string]*types.Field{
-		"host": {Name: "Host", TOMLName: "host", Kind: types.KindString},
-	}
-
-	opts := Options{
-		OutputDir:   tmpDir,
-		PackageName: "config",
-		EnvPrefix:   "APP_ENV",
-		WithLoader:  true,
-		WithVault:   true,
-		WithRTC:     true,
-	}
-
-	err := Generate(opts, fields)
-	if err != nil {
-		t.Fatalf("Generate вернул ошибку: %v", err)
-	}
-
-	loaderPath := filepath.Join(tmpDir, "loader.gen.go")
-	loaderContent, err := os.ReadFile(loaderPath)
-	if err != nil {
-		t.Fatalf("не удалось прочитать loader.gen.go: %v", err)
-	}
-
-	loaderStr := string(loaderContent)
-
-	if !strings.Contains(loaderStr, "VaultConfig") {
-		t.Error("loader.gen.go должен содержать VaultConfig когда WithVault=true")
-	}
-
-	if !strings.Contains(loaderStr, "RTCConfig") {
-		t.Error("loader.gen.go должен содержать RTCConfig когда WithRTC=true")
 	}
 }

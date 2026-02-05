@@ -11,7 +11,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/vovanwin/configgen/pkg/types"
+	"github.com/vovanwin/configgen/internal/model"
 )
 
 //go:embed templates/*.tmpl
@@ -23,22 +23,18 @@ type Options struct {
 	PackageName string // Имя пакета
 	EnvPrefix   string // Префикс переменной окружения
 	WithLoader  bool   // Генерировать loader.gen.go
-	WithVault   bool   // Включить заготовку для Vault
-	WithRTC     bool   // Включить заготовку для RTC
 }
 
 // Generate генерирует config.gen.go и опционально loader.gen.go в указанную директорию
-func Generate(opts Options, fields map[string]*types.Field) error {
+func Generate(opts Options, fields map[string]*model.Field) error {
 	if err := os.MkdirAll(opts.OutputDir, 0o755); err != nil {
 		return fmt.Errorf("создание директории: %w", err)
 	}
 
-	// Генерируем структуры конфига
 	if err := generateConfig(opts, fields); err != nil {
 		return err
 	}
 
-	// Генерируем загрузчик
 	if opts.WithLoader {
 		if err := generateLoader(opts, fields); err != nil {
 			return err
@@ -49,7 +45,7 @@ func Generate(opts Options, fields map[string]*types.Field) error {
 }
 
 // generateConfig генерирует config.gen.go
-func generateConfig(opts Options, fields map[string]*types.Field) error {
+func generateConfig(opts Options, fields map[string]*model.Field) error {
 	tmplB, err := templatesFS.ReadFile("templates/config.go.tmpl")
 	if err != nil {
 		return fmt.Errorf("чтение шаблона: %w", err)
@@ -64,11 +60,9 @@ func generateConfig(opts Options, fields map[string]*types.Field) error {
 
 	buf := &bytes.Buffer{}
 	data := map[string]any{
-		"Package":   opts.PackageName,
-		"Fields":    fields,
-		"Keys":      keys,
-		"WithVault": opts.WithVault,
-		"WithRTC":   opts.WithRTC,
+		"Package": opts.PackageName,
+		"Fields":  fields,
+		"Keys":    keys,
 	}
 
 	if err := tmpl.Execute(buf, data); err != nil {
@@ -77,7 +71,6 @@ func generateConfig(opts Options, fields map[string]*types.Field) error {
 
 	formatted, err := format.Source(buf.Bytes())
 	if err != nil {
-		// Сохраняем неформатированный для отладки
 		outFile := filepath.Join(opts.OutputDir, "config.gen.go")
 		_ = os.WriteFile(outFile, buf.Bytes(), 0o644)
 		return fmt.Errorf("форматирование кода: %w", err)
@@ -88,7 +81,7 @@ func generateConfig(opts Options, fields map[string]*types.Field) error {
 }
 
 // generateLoader генерирует loader.gen.go
-func generateLoader(opts Options, fields map[string]*types.Field) error {
+func generateLoader(opts Options, fields map[string]*model.Field) error {
 	tmplB, err := templatesFS.ReadFile("templates/loader.go.tmpl")
 	if err != nil {
 		return fmt.Errorf("чтение шаблона loader: %w", err)
@@ -103,8 +96,6 @@ func generateLoader(opts Options, fields map[string]*types.Field) error {
 	data := map[string]any{
 		"Package":   opts.PackageName,
 		"EnvPrefix": opts.EnvPrefix,
-		"WithVault": opts.WithVault,
-		"WithRTC":   opts.WithRTC,
 	}
 
 	if err := tmpl.Execute(buf, data); err != nil {
@@ -127,7 +118,7 @@ func templateFuncs() template.FuncMap {
 	return template.FuncMap{
 		"GoType":     goType,
 		"GoItemType": goItemType,
-		"keys": func(m map[string]*types.Field) []string {
+		"keys": func(m map[string]*model.Field) []string {
 			return sortedKeys(m)
 		},
 		"needsTime":     needsTime,
@@ -155,21 +146,21 @@ func hasComment(comment string) bool {
 }
 
 // goType возвращает Go тип для поля
-func goType(f *types.Field) string {
+func goType(f *model.Field) string {
 	switch f.Kind {
-	case types.KindString:
+	case model.KindString:
 		return "string"
-	case types.KindInt:
+	case model.KindInt:
 		return "int"
-	case types.KindFloat:
+	case model.KindFloat:
 		return "float64"
-	case types.KindBool:
+	case model.KindBool:
 		return "bool"
-	case types.KindDuration:
+	case model.KindDuration:
 		return "time.Duration"
-	case types.KindSlice:
+	case model.KindSlice:
 		return "[]" + goItemType(f.ItemKind)
-	case types.KindObject:
+	case model.KindObject:
 		return toGoStructName(f.TOMLName)
 	default:
 		return "any"
@@ -177,15 +168,15 @@ func goType(f *types.Field) string {
 }
 
 // goItemType возвращает Go тип для элемента слайса
-func goItemType(k types.Kind) string {
+func goItemType(k model.Kind) string {
 	switch k {
-	case types.KindString:
+	case model.KindString:
 		return "string"
-	case types.KindInt:
+	case model.KindInt:
 		return "int"
-	case types.KindFloat:
+	case model.KindFloat:
 		return "float64"
-	case types.KindBool:
+	case model.KindBool:
 		return "bool"
 	default:
 		return "any"
@@ -224,12 +215,12 @@ func sortedKeys[V any](m map[string]V) []string {
 }
 
 // needsTime проверяет использует ли какое-либо поле time.Duration
-func needsTime(fields map[string]*types.Field) bool {
+func needsTime(fields map[string]*model.Field) bool {
 	for _, f := range fields {
-		if f.Kind == types.KindDuration {
+		if f.Kind == model.KindDuration {
 			return true
 		}
-		if f.Kind == types.KindObject && needsTime(f.Children) {
+		if f.Kind == model.KindObject && needsTime(f.Children) {
 			return true
 		}
 	}

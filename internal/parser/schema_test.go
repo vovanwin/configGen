@@ -1,28 +1,26 @@
-package schema
+package parser
 
 import (
 	"testing"
 
-	"github.com/vovanwin/configgen/pkg/types"
+	"github.com/vovanwin/configgen/internal/model"
 )
 
 func TestIntersect(t *testing.T) {
-	// Создаем две карты полей
-	a := map[string]*types.Field{
-		"host":   {Name: "Host", TOMLName: "host", Kind: types.KindString},
-		"port":   {Name: "Port", TOMLName: "port", Kind: types.KindInt},
-		"only_a": {Name: "OnlyA", TOMLName: "only_a", Kind: types.KindString},
+	a := map[string]*model.Field{
+		"host":   {Name: "Host", TOMLName: "host", Kind: model.KindString},
+		"port":   {Name: "Port", TOMLName: "port", Kind: model.KindInt},
+		"only_a": {Name: "OnlyA", TOMLName: "only_a", Kind: model.KindString},
 	}
 
-	b := map[string]*types.Field{
-		"host":   {Name: "Host", TOMLName: "host", Kind: types.KindString},
-		"port":   {Name: "Port", TOMLName: "port", Kind: types.KindInt},
-		"only_b": {Name: "OnlyB", TOMLName: "only_b", Kind: types.KindString},
+	b := map[string]*model.Field{
+		"host":   {Name: "Host", TOMLName: "host", Kind: model.KindString},
+		"port":   {Name: "Port", TOMLName: "port", Kind: model.KindInt},
+		"only_b": {Name: "OnlyB", TOMLName: "only_b", Kind: model.KindString},
 	}
 
 	result := Intersect(a, b)
 
-	// Должны быть только общие поля
 	if len(result) != 2 {
 		t.Errorf("len(result) = %d, ожидалось 2", len(result))
 	}
@@ -45,43 +43,41 @@ func TestIntersect(t *testing.T) {
 }
 
 func TestIntersectDifferentTypes(t *testing.T) {
-	a := map[string]*types.Field{
-		"value": {Name: "Value", TOMLName: "value", Kind: types.KindString},
+	a := map[string]*model.Field{
+		"value": {Name: "Value", TOMLName: "value", Kind: model.KindString},
 	}
 
-	b := map[string]*types.Field{
-		"value": {Name: "Value", TOMLName: "value", Kind: types.KindInt},
+	b := map[string]*model.Field{
+		"value": {Name: "Value", TOMLName: "value", Kind: model.KindInt},
 	}
 
 	result := Intersect(a, b)
 
-	// Поле с разными типами не должно быть в результате
 	if len(result) != 0 {
 		t.Errorf("len(result) = %d, ожидалось 0 (разные типы)", len(result))
 	}
 }
 
 func TestIntersectNested(t *testing.T) {
-	a := map[string]*types.Field{
+	a := map[string]*model.Field{
 		"server": {
 			Name:     "Server",
 			TOMLName: "server",
-			Kind:     types.KindObject,
-			Children: map[string]*types.Field{
-				"host": {Name: "Host", TOMLName: "host", Kind: types.KindString},
-				"port": {Name: "Port", TOMLName: "port", Kind: types.KindInt},
+			Kind:     model.KindObject,
+			Children: map[string]*model.Field{
+				"host": {Name: "Host", TOMLName: "host", Kind: model.KindString},
+				"port": {Name: "Port", TOMLName: "port", Kind: model.KindInt},
 			},
 		},
 	}
 
-	b := map[string]*types.Field{
+	b := map[string]*model.Field{
 		"server": {
 			Name:     "Server",
 			TOMLName: "server",
-			Kind:     types.KindObject,
-			Children: map[string]*types.Field{
-				"host": {Name: "Host", TOMLName: "host", Kind: types.KindString},
-				// port отсутствует
+			Kind:     model.KindObject,
+			Children: map[string]*model.Field{
+				"host": {Name: "Host", TOMLName: "host", Kind: model.KindString},
 			},
 		},
 	}
@@ -110,8 +106,8 @@ func TestIntersectEmpty(t *testing.T) {
 }
 
 func TestIntersectSingle(t *testing.T) {
-	a := map[string]*types.Field{
-		"host": {Name: "Host", TOMLName: "host", Kind: types.KindString},
+	a := map[string]*model.Field{
+		"host": {Name: "Host", TOMLName: "host", Kind: model.KindString},
 	}
 
 	result := Intersect(a)
@@ -121,19 +117,18 @@ func TestIntersectSingle(t *testing.T) {
 }
 
 func TestUnion(t *testing.T) {
-	a := map[string]*types.Field{
-		"host":   {Name: "Host", TOMLName: "host", Kind: types.KindString},
-		"only_a": {Name: "OnlyA", TOMLName: "only_a", Kind: types.KindString},
+	a := map[string]*model.Field{
+		"host":   {Name: "Host", TOMLName: "host", Kind: model.KindString},
+		"only_a": {Name: "OnlyA", TOMLName: "only_a", Kind: model.KindString},
 	}
 
-	b := map[string]*types.Field{
-		"host":   {Name: "Host", TOMLName: "host", Kind: types.KindString},
-		"only_b": {Name: "OnlyB", TOMLName: "only_b", Kind: types.KindInt},
+	b := map[string]*model.Field{
+		"host":   {Name: "Host", TOMLName: "host", Kind: model.KindString},
+		"only_b": {Name: "OnlyB", TOMLName: "only_b", Kind: model.KindInt},
 	}
 
 	result := Union(a, b)
 
-	// Должны быть все поля
 	if len(result) != 3 {
 		t.Errorf("len(result) = %d, ожидалось 3", len(result))
 	}
@@ -152,24 +147,24 @@ func TestUnion(t *testing.T) {
 }
 
 func TestUnionNested(t *testing.T) {
-	a := map[string]*types.Field{
+	a := map[string]*model.Field{
 		"config": {
 			Name:     "Config",
 			TOMLName: "config",
-			Kind:     types.KindObject,
-			Children: map[string]*types.Field{
-				"host": {Name: "Host", TOMLName: "host", Kind: types.KindString},
+			Kind:     model.KindObject,
+			Children: map[string]*model.Field{
+				"host": {Name: "Host", TOMLName: "host", Kind: model.KindString},
 			},
 		},
 	}
 
-	b := map[string]*types.Field{
+	b := map[string]*model.Field{
 		"config": {
 			Name:     "Config",
 			TOMLName: "config",
-			Kind:     types.KindObject,
-			Children: map[string]*types.Field{
-				"port": {Name: "Port", TOMLName: "port", Kind: types.KindInt},
+			Kind:     model.KindObject,
+			Children: map[string]*model.Field{
+				"port": {Name: "Port", TOMLName: "port", Kind: model.KindInt},
 			},
 		},
 	}
@@ -187,19 +182,18 @@ func TestUnionNested(t *testing.T) {
 }
 
 func TestMerge(t *testing.T) {
-	a := map[string]*types.Field{
-		"host": {Name: "Host", TOMLName: "host", Kind: types.KindString},
+	a := map[string]*model.Field{
+		"host": {Name: "Host", TOMLName: "host", Kind: model.KindString},
 	}
 
-	b := map[string]*types.Field{
-		"host": {Name: "Host", TOMLName: "host", Kind: types.KindInt}, // другой тип
-		"port": {Name: "Port", TOMLName: "port", Kind: types.KindInt},
+	b := map[string]*model.Field{
+		"host": {Name: "Host", TOMLName: "host", Kind: model.KindInt},
+		"port": {Name: "Port", TOMLName: "port", Kind: model.KindInt},
 	}
 
 	result := Merge(a, b)
 
-	// b переопределяет a
-	if result["host"].Kind != types.KindInt {
+	if result["host"].Kind != model.KindInt {
 		t.Error("Merge должен переопределять значения более поздними")
 	}
 

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/vovanwin/configgen/pkg/types"
+	"github.com/vovanwin/configgen/internal/model"
 )
 
 func TestToGoName(t *testing.T) {
@@ -87,7 +87,7 @@ enabled = true
 	if !ok {
 		t.Fatal("секция 'server' не найдена")
 	}
-	if server.Kind != types.KindObject {
+	if server.Kind != model.KindObject {
 		t.Errorf("server.Kind = %v, ожидалось KindObject", server.Kind)
 	}
 	if server.Name != "Server" {
@@ -99,7 +99,7 @@ enabled = true
 	if !ok {
 		t.Fatal("поле 'host' не найдено")
 	}
-	if host.Kind != types.KindString {
+	if host.Kind != model.KindString {
 		t.Errorf("host.Kind = %v, ожидалось KindString", host.Kind)
 	}
 
@@ -107,7 +107,7 @@ enabled = true
 	if !ok {
 		t.Fatal("поле 'port' не найдено")
 	}
-	if port.Kind != types.KindInt {
+	if port.Kind != model.KindInt {
 		t.Errorf("port.Kind = %v, ожидалось KindInt", port.Kind)
 	}
 
@@ -115,7 +115,7 @@ enabled = true
 	if !ok {
 		t.Fatal("поле 'timeout' не найдено")
 	}
-	if timeout.Kind != types.KindDuration {
+	if timeout.Kind != model.KindDuration {
 		t.Errorf("timeout.Kind = %v, ожидалось KindDuration", timeout.Kind)
 	}
 
@@ -137,7 +137,7 @@ enabled = true
 	if !ok {
 		t.Fatal("поле 'enabled' не найдено")
 	}
-	if enabled.Kind != types.KindBool {
+	if enabled.Kind != model.KindBool {
 		t.Errorf("enabled.Kind = %v, ожидалось KindBool", enabled.Kind)
 	}
 }

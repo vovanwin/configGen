@@ -63,9 +63,9 @@ func main() {
 	fmt.Println("--- Environment Check ---")
 	if config.IsProduction() {
 		fmt.Println("Режим: PRODUCTION")
-	} else if config.IsDevelopment() {
-		fmt.Println("Режим: DEVELOPMENT")
+	} else if config.IsStg() {
+		fmt.Println("Режим: STG")
 	} else {
-		fmt.Println("Режим: STAGING")
+		fmt.Println("Режим: Local")
 	}
 }

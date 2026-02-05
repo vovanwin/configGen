@@ -8,9 +8,8 @@ import (
 	"path/filepath"
 
 	"github.com/vovanwin/configgen/internal/generator"
+	"github.com/vovanwin/configgen/internal/model"
 	"github.com/vovanwin/configgen/internal/parser"
-	"github.com/vovanwin/configgen/internal/schema"
-	"github.com/vovanwin/configgen/pkg/types"
 )
 
 func main() {
@@ -19,14 +18,12 @@ func main() {
 	pkgName := flag.String("package", "config", "package name for generated code")
 	envPrefix := flag.String("env-prefix", "APP_ENV", "env variable name for environment detection")
 	withLoader := flag.Bool("with-loader", true, "generate loader.gen.go for runtime loading")
-	withVault := flag.Bool("with-vault", false, "include Vault integration placeholders")
-	withRTC := flag.Bool("with-rtc", false, "include RTC (real-time config) placeholders")
 	mode := flag.String("mode", "intersect", "schema mode: intersect (common fields) or union (all fields)")
 
 	flag.Parse()
 
 	// Parse value.toml (constants) separately
-	var valueFields map[string]*types.Field
+	var valueFields map[string]*model.Field
 	valuePath := filepath.Join(*configsDir, "value.toml")
 	if _, err := os.Stat(valuePath); err == nil {
 		valueFields, err = parser.ParseFile(valuePath)
@@ -55,7 +52,7 @@ func main() {
 	}
 
 	// Parse environment configs
-	var envAsts []map[string]*types.Field
+	var envAsts []map[string]*model.Field
 	for _, f := range configFiles {
 		m, err := parser.ParseFile(f)
 		if err != nil {
@@ -66,22 +63,22 @@ func main() {
 	}
 
 	// Build schema for environment configs
-	var envSchema map[string]*types.Field
+	var envSchema map[string]*model.Field
 	if len(envAsts) > 0 {
 		switch *mode {
 		case "intersect":
-			envSchema = schema.Intersect(envAsts...)
+			envSchema = parser.Intersect(envAsts...)
 		case "union":
-			envSchema = schema.Union(envAsts...)
+			envSchema = parser.Union(envAsts...)
 		default:
 			log.Fatalf("unknown mode: %s (use 'intersect' or 'union')", *mode)
 		}
 	}
 
 	// Merge value.toml fields with environment config fields
-	var s map[string]*types.Field
+	var s map[string]*model.Field
 	if valueFields != nil && envSchema != nil {
-		s = schema.Union(valueFields, envSchema)
+		s = parser.Union(valueFields, envSchema)
 	} else if valueFields != nil {
 		s = valueFields
 	} else {
@@ -98,8 +95,6 @@ func main() {
 		PackageName: *pkgName,
 		EnvPrefix:   *envPrefix,
 		WithLoader:  *withLoader,
-		WithVault:   *withVault,
-		WithRTC:     *withRTC,
 	}
 
 	if err := generator.Generate(opts, s); err != nil {
@@ -107,14 +102,14 @@ func main() {
 	}
 
 	fmt.Println()
-	fmt.Println("✓ Generated files:")
+	fmt.Println("Generated files:")
 	fmt.Printf("  - %s/config.gen.go\n", *outDir)
 	if *withLoader {
 		fmt.Printf("  - %s/loader.gen.go\n", *outDir)
 	}
 	fmt.Println()
 	fmt.Println("Config files order (runtime):")
-	fmt.Println("  1. value.toml      - base constants (optional)")
+	fmt.Println("  1. value.toml        - base constants (optional)")
 	fmt.Println("  2. config_{env}.toml - environment-specific")
-	fmt.Println("  3. config_local.toml - local overrides (optional, don't commit)")
+	fmt.Println("  3. config_local.toml - local overrides (optional)")
 }
