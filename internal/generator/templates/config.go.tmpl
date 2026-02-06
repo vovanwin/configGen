@@ -33,6 +33,8 @@ func (c *Config) IsStg() bool        { return c.Env == EnvStaging }
 func (c *Config) IsLocal() bool      { return c.Env == EnvLocal }
 func (c *Config) GetEnv() string     { return string(c.Env) }
 
+//go:generate minimock -i Configurator -o ./mock/ -s _mock.go -g
+
 // Configurator интерфейс для мокирования конфигурации в тестах
 type Configurator interface {
 	IsProduction() bool

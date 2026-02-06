@@ -6,10 +6,10 @@ vars:
   EXAMPLE_OUTPUT: ./example/service/internal/config
 
   DEV_TOOLS: |
-    go.uber.org/mock/mockgen@latest
+    github.com/gojuno/minimock/v3/cmd/minimock@latest
 
   BIN_DIR: '{{.ROOT_DIR}}/bin'
-  MOCKGEN: "{{.BIN_DIR}}/mockgen"
+  MINIMOCK: "{{.BIN_DIR}}/minimock"
 
 env:
   APP_ENV: prod
@@ -35,13 +35,13 @@ tasks:
   generate-config:
     desc: Генерация конфигов для example/service
     cmds:
-      - go run ./cmd/configgen --configs={{.EXAMPLE_CONFIGS}} --output={{.EXAMPLE_OUTPUT}} --package=config
+      - go run ./cmd/configgen --configs={{.EXAMPLE_CONFIGS}} --output={{.EXAMPLE_OUTPUT}} --package=config --init
 
   mock:gen:
-    desc: Генерация моков из интерфейса Configurator
+    desc: Генерация моков (go generate)
+    dir: "{{.EXAMPLE_DIR}}"
     cmds:
-      - mkdir -p {{.EXAMPLE_OUTPUT}}/mock
-      - '{{.MOCKGEN}} -source={{.EXAMPLE_OUTPUT}}/config.gen.go -destination={{.EXAMPLE_OUTPUT}}/mock/mock_config.gen.go -package=mock'
+      - PATH="{{.BIN_DIR}}:$PATH" go generate ./internal/config/...
 
   example:run:
     desc: Запуск example/service

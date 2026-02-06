@@ -71,12 +71,12 @@ func generateConfig(opts Options, fields map[string]*model.Field) error {
 
 	formatted, err := format.Source(buf.Bytes())
 	if err != nil {
-		outFile := filepath.Join(opts.OutputDir, "config.gen.go")
+		outFile := filepath.Join(opts.OutputDir, "configgen_config.go")
 		_ = os.WriteFile(outFile, buf.Bytes(), 0o644)
 		return fmt.Errorf("форматирование кода: %w", err)
 	}
 
-	outFile := filepath.Join(opts.OutputDir, "config.gen.go")
+	outFile := filepath.Join(opts.OutputDir, "configgen_config.go")
 	return os.WriteFile(outFile, formatted, 0o644)
 }
 
@@ -104,12 +104,12 @@ func generateLoader(opts Options, fields map[string]*model.Field) error {
 
 	formatted, err := format.Source(buf.Bytes())
 	if err != nil {
-		outFile := filepath.Join(opts.OutputDir, "loader.gen.go")
+		outFile := filepath.Join(opts.OutputDir, "configgen_loader.go")
 		_ = os.WriteFile(outFile, buf.Bytes(), 0o644)
 		return fmt.Errorf("форматирование loader кода: %w", err)
 	}
 
-	outFile := filepath.Join(opts.OutputDir, "loader.gen.go")
+	outFile := filepath.Join(opts.OutputDir, "configgen_loader.go")
 	return os.WriteFile(outFile, formatted, 0o644)
 }
 

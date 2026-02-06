@@ -136,82 +136,82 @@ func TestGenerate(t *testing.T) {
 		t.Fatalf("Generate вернул ошибку: %v", err)
 	}
 
-	// Проверяем что config.gen.go создан
-	configPath := filepath.Join(tmpDir, "config.gen.go")
+	// Проверяем что configgen_config.go создан
+	configPath := filepath.Join(tmpDir, "configgen_config.go")
 	configContent, err := os.ReadFile(configPath)
 	if err != nil {
-		t.Fatalf("не удалось прочитать config.gen.go: %v", err)
+		t.Fatalf("не удалось прочитать configgen_config.go: %v", err)
 	}
 
 	configStr := string(configContent)
 
 	if !strings.Contains(configStr, "package testconfig") {
-		t.Error("config.gen.go должен содержать правильное имя пакета")
+		t.Error("configgen_config.go должен содержать правильное имя пакета")
 	}
 
 	if !strings.Contains(configStr, "type Config struct") {
-		t.Error("config.gen.go должен содержать структуру Config")
+		t.Error("configgen_config.go должен содержать структуру Config")
 	}
 
 	if !strings.Contains(configStr, "type Server struct") {
-		t.Error("config.gen.go должен содержать структуру Server")
+		t.Error("configgen_config.go должен содержать структуру Server")
 	}
 
 	if !strings.Contains(configStr, "time.Duration") {
-		t.Error("config.gen.go должен импортировать time для Duration")
+		t.Error("configgen_config.go должен импортировать time для Duration")
 	}
 
 	if !strings.Contains(configStr, `toml:"host"`) {
-		t.Error("config.gen.go должен содержать TOML теги")
+		t.Error("configgen_config.go должен содержать TOML теги")
 	}
 
 	if !strings.Contains(configStr, "Env") || !strings.Contains(configStr, "`toml:\"-\"`") {
-		t.Error("config.gen.go должен содержать поле Env Environment")
+		t.Error("configgen_config.go должен содержать поле Env Environment")
 	}
 
 	if !strings.Contains(configStr, "func (c *Config) IsProduction()") {
-		t.Error("config.gen.go должен содержать метод IsProduction")
+		t.Error("configgen_config.go должен содержать метод IsProduction")
 	}
 
 	if !strings.Contains(configStr, "func (c *Config) IsStg()") {
-		t.Error("config.gen.go должен содержать метод IsStg")
+		t.Error("configgen_config.go должен содержать метод IsStg")
 	}
 
 	if !strings.Contains(configStr, "func (c *Config) IsLocal()") {
-		t.Error("config.gen.go должен содержать метод IsLocal")
+		t.Error("configgen_config.go должен содержать метод IsLocal")
 	}
 
-	// Проверяем что loader.gen.go создан
-	loaderPath := filepath.Join(tmpDir, "loader.gen.go")
+	// Проверяем что configgen_loader.go создан
+	loaderPath := filepath.Join(tmpDir, "configgen_loader.go")
 	loaderContent, err := os.ReadFile(loaderPath)
 	if err != nil {
-		t.Fatalf("не удалось прочитать loader.gen.go: %v", err)
+		t.Fatalf("не удалось прочитать configgen_loader.go: %v", err)
 	}
 
 	loaderStr := string(loaderContent)
 
 	if !strings.Contains(loaderStr, "func Load(") {
-		t.Error("loader.gen.go должен содержать функцию Load")
+		t.Error("configgen_loader.go должен содержать функцию Load")
 	}
 
 	if !strings.Contains(loaderStr, "func MustLoad(") {
-		t.Error("loader.gen.go должен содержать функцию MustLoad")
+		t.Error("configgen_loader.go должен содержать функцию MustLoad")
 	}
 
 	if !strings.Contains(loaderStr, "TEST_ENV") {
-		t.Error("loader.gen.go должен использовать правильный EnvPrefix")
+		t.Error("configgen_loader.go должен использовать правильный EnvPrefix")
 	}
 
 	if !strings.Contains(loaderStr, "koanf") {
-		t.Error("loader.gen.go должен использовать koanf")
+		t.Error("configgen_loader.go должен использовать koanf")
 	}
 
 	if !strings.Contains(loaderStr, "allConfigs") {
-		t.Error("loader.gen.go должен хранить все конфиги в map")
+		t.Error("configgen_loader.go должен хранить все конфиги в map")
 	}
 
 	if !strings.Contains(loaderStr, "func GetAll()") {
-		t.Error("loader.gen.go должен содержать функцию GetAll")
+		t.Error("configgen_loader.go должен содержать функцию GetAll")
 	}
 }
 
@@ -233,13 +233,13 @@ func TestGenerateWithoutLoader(t *testing.T) {
 		t.Fatalf("Generate вернул ошибку: %v", err)
 	}
 
-	configPath := filepath.Join(tmpDir, "config.gen.go")
+	configPath := filepath.Join(tmpDir, "configgen_config.go")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		t.Error("config.gen.go должен быть создан")
+		t.Error("configgen_config.go должен быть создан")
 	}
 
-	loaderPath := filepath.Join(tmpDir, "loader.gen.go")
+	loaderPath := filepath.Join(tmpDir, "configgen_loader.go")
 	if _, err := os.Stat(loaderPath); !os.IsNotExist(err) {
-		t.Error("loader.gen.go не должен быть создан когда WithLoader=false")
+		t.Error("configgen_loader.go не должен быть создан когда WithLoader=false")
 	}
 }

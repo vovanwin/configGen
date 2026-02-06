@@ -17,10 +17,20 @@ func main() {
 	outDir := flag.String("output", "./internal/config", "output directory for generated code")
 	pkgName := flag.String("package", "config", "package name for generated code")
 	envPrefix := flag.String("env-prefix", "APP_ENV", "env variable name for environment detection")
-	withLoader := flag.Bool("with-loader", true, "generate loader.gen.go for runtime loading")
+	withLoader := flag.Bool("with-loader", true, "generate configgen_loader.go for runtime loading")
 	mode := flag.String("mode", "intersect", "schema mode: intersect (common fields) or union (all fields)")
+	initFlag := flag.Bool("init", false, "create initial config files in --configs directory")
 
 	flag.Parse()
+
+	if *initFlag {
+		fmt.Println("Initializing config files...")
+		if err := generator.Init(*configsDir); err != nil {
+			log.Fatalf("init: %v", err)
+		}
+		fmt.Println("Done! Edit the files and run configgen without --init to generate code.")
+		return
+	}
 
 	// Parse value.toml (constants) separately
 	var valueFields map[string]*model.Field
@@ -97,9 +107,9 @@ func main() {
 
 	fmt.Println()
 	fmt.Println("Generated files:")
-	fmt.Printf("  - %s/config.gen.go\n", *outDir)
+	fmt.Printf("  - %s/configgen_config.go\n", *outDir)
 	if *withLoader {
-		fmt.Printf("  - %s/loader.gen.go\n", *outDir)
+		fmt.Printf("  - %s/configgen_loader.go\n", *outDir)
 	}
 	fmt.Println()
 	fmt.Println("Config files order (runtime):")
