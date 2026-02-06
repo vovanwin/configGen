@@ -6,6 +6,7 @@ require (
 	github.com/knadh/koanf/parsers/toml/v2 v2.2.0
 	github.com/knadh/koanf/providers/file v1.2.1
 	github.com/knadh/koanf/v2 v2.3.2
+	go.uber.org/mock v0.6.0
 )
 
 require (

@@ -5,10 +5,23 @@ vars:
   EXAMPLE_CONFIGS: ./example/service/configs
   EXAMPLE_OUTPUT: ./example/service/internal/config
 
+  DEV_TOOLS: |
+    go.uber.org/mock/mockgen@latest
+
+  BIN_DIR: '{{.ROOT_DIR}}/bin'
+  MOCKGEN: "{{.BIN_DIR}}/mockgen"
+
 env:
-  APP_ENV: local
+  APP_ENV: prod
 
 tasks:
+  install:
+    desc: "Устанавливает все инструменты разработки"
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - for: { var: DEV_TOOLS }
+        cmd: GOBIN="{{.BIN_DIR}}" go install "{{ .ITEM }}"
+
   test:
     desc: Запуск всех тестов
     cmds:
@@ -19,10 +32,16 @@ tasks:
     cmds:
       - go build ./cmd/configgen
 
-  generate:
+  generate-config:
     desc: Генерация конфигов для example/service
     cmds:
       - go run ./cmd/configgen --configs={{.EXAMPLE_CONFIGS}} --output={{.EXAMPLE_OUTPUT}} --package=config
+
+  mock:gen:
+    desc: Генерация моков из интерфейса Configurator
+    cmds:
+      - mkdir -p {{.EXAMPLE_OUTPUT}}/mock
+      - '{{.MOCKGEN}} -source={{.EXAMPLE_OUTPUT}}/config.gen.go -destination={{.EXAMPLE_OUTPUT}}/mock/mock_config.gen.go -package=mock'
 
   example:run:
     desc: Запуск example/service
@@ -37,8 +56,9 @@ tasks:
       - go build ./...
 
   all:
-    desc: Тесты + генерация + сборка example
+    desc: Тесты + генерация + моки + сборка example
     cmds:
       - task: test
-      - task: generate
+      - task: generate-config
+      - task: mock:gen
       - task: example:build

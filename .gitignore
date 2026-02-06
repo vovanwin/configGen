@@ -8,6 +8,8 @@
 *.out
 go.work
 go.work.sum
+./bin
+configgen
 
 # Local config overrides (never commit!)
 config_local.toml

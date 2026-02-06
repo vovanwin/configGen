@@ -5,8 +5,19 @@ package config
 
 import "time"
 
+// Environment представляет окружение развертывания
+type Environment string
+
+const (
+	EnvLocal      Environment = "local"
+	EnvDev        Environment = "dev"
+	EnvStaging    Environment = "stg"
+	EnvProduction Environment = "prod"
+)
+
 // Config основная структура конфигурации
 type Config struct {
+	Env Environment `toml:"-"`
 	// Информация о приложении
 	App App `toml:"app"`
 	Db  Db  `toml:"db"`
@@ -17,6 +28,19 @@ type Config struct {
 	Log    Log    `toml:"log"`
 	Redis  Redis  `toml:"redis"`
 	Server Server `toml:"server"`
+}
+
+func (c *Config) IsProduction() bool { return c.Env == EnvProduction }
+func (c *Config) IsStg() bool        { return c.Env == EnvStaging }
+func (c *Config) IsLocal() bool      { return c.Env == EnvLocal }
+func (c *Config) GetEnv() string     { return string(c.Env) }
+
+// Configurator интерфейс для мокирования конфигурации в тестах
+type Configurator interface {
+	IsProduction() bool
+	IsStg() bool
+	IsLocal() bool
+	GetEnv() string
 }
 
 // Информация о приложении

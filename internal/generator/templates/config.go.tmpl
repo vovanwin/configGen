@@ -5,8 +5,20 @@ package {{ .Package }}
 {{ if needsTime .Fields }}
 import "time"
 {{ end }}
+
+// Environment представляет окружение развертывания
+type Environment string
+
+const (
+	EnvLocal      Environment = "local"
+	EnvDev        Environment = "dev"
+	EnvStaging    Environment = "stg"
+	EnvProduction Environment = "prod"
+)
+
 // Config основная структура конфигурации
 type Config struct {
+	Env Environment `toml:"-"`
 {{- range $i, $k := .Keys }}
 {{- $field := index $.Fields $k }}
 {{- if hasComment $field.Comment }}
@@ -14,6 +26,19 @@ type Config struct {
 {{- end }}
 	{{ $field.Name }} {{ GoType $field }} `toml:"{{ $field.TOMLName }}"`
 {{- end }}
+}
+
+func (c *Config) IsProduction() bool { return c.Env == EnvProduction }
+func (c *Config) IsStg() bool        { return c.Env == EnvStaging }
+func (c *Config) IsLocal() bool      { return c.Env == EnvLocal }
+func (c *Config) GetEnv() string     { return string(c.Env) }
+
+// Configurator интерфейс для мокирования конфигурации в тестах
+type Configurator interface {
+	IsProduction() bool
+	IsStg() bool
+	IsLocal() bool
+	GetEnv() string
 }
 
 {{/* Генерируем вложенные структуры */}}

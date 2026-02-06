@@ -5,7 +5,7 @@
 # Адрес для прослушивания
 host = "localhost"
 # Порт сервера
-port = 8080
+port = 999999
 # Таймаут на чтение запроса
 read_timeout = "5s"
 # Таймаут на запись ответа
@@ -18,7 +18,7 @@ host = "localhost"
 # Порт PostgreSQL
 port = 5432
 # Имя базы данных
-name = "myapp_dev"
+name = "myapp_prod"
 # Пользователь БД
 user = "dev_user"
 # Пароль (в dev можно хранить в конфиге)

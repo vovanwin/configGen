@@ -11,8 +11,7 @@ import (
 
 func main() {
 	cfg, err := config.Load(&config.LoadOptions{
-		ConfigDir:           "./configs",
-		EnableLocalOverride: true,
+		ConfigDir: "./configs",
 	})
 	if err != nil {
 		log.Fatalf("Ошибка загрузки конфига: %v", err)

@@ -165,6 +165,22 @@ func TestGenerate(t *testing.T) {
 		t.Error("config.gen.go должен содержать TOML теги")
 	}
 
+	if !strings.Contains(configStr, "Env") || !strings.Contains(configStr, "`toml:\"-\"`") {
+		t.Error("config.gen.go должен содержать поле Env Environment")
+	}
+
+	if !strings.Contains(configStr, "func (c *Config) IsProduction()") {
+		t.Error("config.gen.go должен содержать метод IsProduction")
+	}
+
+	if !strings.Contains(configStr, "func (c *Config) IsStg()") {
+		t.Error("config.gen.go должен содержать метод IsStg")
+	}
+
+	if !strings.Contains(configStr, "func (c *Config) IsLocal()") {
+		t.Error("config.gen.go должен содержать метод IsLocal")
+	}
+
 	// Проверяем что loader.gen.go создан
 	loaderPath := filepath.Join(tmpDir, "loader.gen.go")
 	loaderContent, err := os.ReadFile(loaderPath)
@@ -188,6 +204,14 @@ func TestGenerate(t *testing.T) {
 
 	if !strings.Contains(loaderStr, "koanf") {
 		t.Error("loader.gen.go должен использовать koanf")
+	}
+
+	if !strings.Contains(loaderStr, "allConfigs") {
+		t.Error("loader.gen.go должен хранить все конфиги в map")
+	}
+
+	if !strings.Contains(loaderStr, "func GetAll()") {
+		t.Error("loader.gen.go должен содержать функцию GetAll")
 	}
 }
 

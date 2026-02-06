@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/knadh/koanf/parsers/toml/v2"
@@ -14,20 +15,10 @@ import (
 	"github.com/knadh/koanf/v2"
 )
 
-// Environment представляет окружение развертывания
-type Environment string
-
-const (
-	EnvLocal      Environment = "local"
-	EnvDev        Environment = "dev"
-	EnvStaging    Environment = "stg"
-	EnvProduction Environment = "prod"
-)
-
 var (
-	globalConfig *Config
-	configMu     sync.RWMutex
-	currentEnv   Environment
+	allConfigs map[Environment]*Config
+	configMu   sync.RWMutex
+	currentEnv Environment
 )
 
 // LoadOptions настраивает загрузку конфигурации
@@ -39,17 +30,18 @@ type LoadOptions struct {
 	// Если пусто, читается из переменной окружения APP_ENV
 	Environment Environment
 
-	// EnableLocalOverride позволяет config_local.toml переопределять значения
-	EnableLocalOverride bool
+	// EnableOverride позволяет override.toml переопределять значения текущего окружения
+	EnableOverride bool
 }
 
-// Load загружает конфигурацию с заданными опциями
-// Порядок: value.toml -> config_{env}.toml -> config_local.toml
+// Load загружает все конфигурации окружений и выбирает нужную
+// Порядок мержа для каждого env: value.toml -> config_{env}.toml
+// Для текущего env дополнительно: -> override.toml (если EnableOverride=true)
 func Load(opts *LoadOptions) (*Config, error) {
 	if opts == nil {
 		opts = &LoadOptions{
-			ConfigDir:           "./configs",
-			EnableLocalOverride: true,
+			ConfigDir:      "./configs",
+			EnableOverride: true,
 		}
 	}
 
@@ -62,43 +54,97 @@ func Load(opts *LoadOptions) (*Config, error) {
 		env = Environment(envStr)
 	}
 
+	valuePath := filepath.Join(opts.ConfigDir, "value.toml")
+	hasValue := fileExists(valuePath)
+
+	// Находим все config_*.toml (каждый = отдельное окружение)
+	matches, err := filepath.Glob(filepath.Join(opts.ConfigDir, "config_*.toml"))
+	if err != nil {
+		return nil, fmt.Errorf("поиск конфигов: %w", err)
+	}
+
+	configs := make(map[Environment]*Config)
+
+	for _, match := range matches {
+		envName := envFromFilename(filepath.Base(match))
+
+		cfg, err := loadSingle(valuePath, hasValue, match)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Env = Environment(envName)
+		configs[cfg.Env] = cfg
+	}
+
+	// Для текущего окружения применяем override.toml
+	if opts.EnableOverride {
+		overridePath := filepath.Join(opts.ConfigDir, "override.toml")
+		if fileExists(overridePath) {
+			envPath := filepath.Join(opts.ConfigDir, fmt.Sprintf("config_%s.toml", env))
+			if fileExists(envPath) {
+				k := koanf.New(".")
+				if hasValue {
+					if err := k.Load(file.Provider(valuePath), toml.Parser()); err != nil {
+						return nil, fmt.Errorf("загрузка value.toml: %w", err)
+					}
+				}
+				if err := k.Load(file.Provider(envPath), toml.Parser()); err != nil {
+					return nil, fmt.Errorf("загрузка config_%s.toml: %w", env, err)
+				}
+				if err := k.Load(file.Provider(overridePath), toml.Parser()); err != nil {
+					return nil, fmt.Errorf("загрузка override.toml: %w", err)
+				}
+				cfg := &Config{}
+				if err := k.UnmarshalWithConf("", cfg, koanf.UnmarshalConf{Tag: "toml"}); err != nil {
+					return nil, fmt.Errorf("декодирование конфига: %w", err)
+				}
+				cfg.Env = env
+				configs[env] = cfg
+			}
+		}
+	}
+
+	current := configs[env]
+	if current == nil {
+		return nil, fmt.Errorf("конфиг для окружения %q не найден", env)
+	}
+
+	configMu.Lock()
+	allConfigs = configs
+	currentEnv = env
+	configMu.Unlock()
+
+	return current, nil
+}
+
+// loadSingle загружает один конфиг: value.toml + config_{env}.toml
+func loadSingle(valuePath string, hasValue bool, envPath string) (*Config, error) {
 	k := koanf.New(".")
 
-	// 1. value.toml (константы, опционально)
-	valuePath := filepath.Join(opts.ConfigDir, "value.toml")
-	if _, err := os.Stat(valuePath); err == nil {
+	if hasValue {
 		if err := k.Load(file.Provider(valuePath), toml.Parser()); err != nil {
 			return nil, fmt.Errorf("загрузка value.toml: %w", err)
 		}
 	}
 
-	// 2. config_{env}.toml (обязательно)
-	envPath := filepath.Join(opts.ConfigDir, fmt.Sprintf("config_%s.toml", env))
 	if err := k.Load(file.Provider(envPath), toml.Parser()); err != nil {
-		return nil, fmt.Errorf("загрузка config_%s.toml: %w", env, err)
-	}
-
-	// 3. config_local.toml (локальные переопределения, опционально)
-	if opts.EnableLocalOverride {
-		localPath := filepath.Join(opts.ConfigDir, "config_local.toml")
-		if _, err := os.Stat(localPath); err == nil {
-			if err := k.Load(file.Provider(localPath), toml.Parser()); err != nil {
-				return nil, fmt.Errorf("загрузка config_local.toml: %w", err)
-			}
-		}
+		return nil, fmt.Errorf("загрузка %s: %w", filepath.Base(envPath), err)
 	}
 
 	cfg := &Config{}
 	if err := k.UnmarshalWithConf("", cfg, koanf.UnmarshalConf{Tag: "toml"}); err != nil {
-		return nil, fmt.Errorf("декодирование конфига: %w", err)
+		return nil, fmt.Errorf("декодирование %s: %w", filepath.Base(envPath), err)
 	}
-
-	configMu.Lock()
-	globalConfig = cfg
-	currentEnv = env
-	configMu.Unlock()
-
 	return cfg, nil
+}
+
+func envFromFilename(name string) string {
+	return strings.TrimSuffix(strings.TrimPrefix(name, "config_"), ".toml")
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // MustLoad загружает конфигурацию или паникует при ошибке
@@ -114,7 +160,7 @@ func MustLoad(opts *LoadOptions) *Config {
 func Get() *Config {
 	configMu.RLock()
 	defer configMu.RUnlock()
-	return globalConfig
+	return allConfigs[currentEnv]
 }
 
 // GetEnv возвращает текущее окружение
@@ -122,6 +168,13 @@ func GetEnv() Environment {
 	configMu.RLock()
 	defer configMu.RUnlock()
 	return currentEnv
+}
+
+// GetAll возвращает конфиги всех окружений
+func GetAll() map[Environment]*Config {
+	configMu.RLock()
+	defer configMu.RUnlock()
+	return allConfigs
 }
 
 // IsProduction возвращает true если работаем в production

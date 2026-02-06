@@ -39,13 +39,7 @@ func main() {
 		log.Fatalf("glob: %v", err)
 	}
 
-	// Filter out config_local.toml from schema generation
-	var configFiles []string
-	for _, f := range envConfigs {
-		if filepath.Base(f) != "config_local.toml" {
-			configFiles = append(configFiles, f)
-		}
-	}
+	configFiles := envConfigs
 
 	if len(configFiles) == 0 && valueFields == nil {
 		log.Fatalf("need at least value.toml or config_*.toml files in %s", *configsDir)
