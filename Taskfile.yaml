@@ -32,10 +32,15 @@ tasks:
     cmds:
       - go build ./cmd/configgen
 
+  init:
+    desc: Инициализация шаблонов конфигов
+    cmds:
+      - go run ./cmd/configgen --configs={{.EXAMPLE_CONFIGS}} --init
+
   generate-config:
     desc: Генерация конфигов для example/service
     cmds:
-      - go run ./cmd/configgen --configs={{.EXAMPLE_CONFIGS}} --output={{.EXAMPLE_OUTPUT}} --package=config --init
+      - go run ./cmd/configgen --configs={{.EXAMPLE_CONFIGS}} --output={{.EXAMPLE_OUTPUT}} --package=config
 
   mock:gen:
     desc: Генерация моков (go generate)
@@ -49,6 +54,12 @@ tasks:
     cmds:
       - go run main.go
 
+  example:test:
+    desc: Тесты example/service
+    dir: "{{.EXAMPLE_DIR}}"
+    cmds:
+      - go test ./...
+
   example:build:
     desc: Сборка example/service
     dir: "{{.EXAMPLE_DIR}}"
@@ -56,9 +67,10 @@ tasks:
       - go build ./...
 
   all:
-    desc: Тесты + генерация + моки + сборка example
+    desc: Тесты + генерация + моки + тесты example + сборка example
     cmds:
       - task: test
       - task: generate-config
       - task: mock:gen
+      - task: example:test
       - task: example:build
