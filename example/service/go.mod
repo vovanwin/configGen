@@ -3,6 +3,7 @@ module example/service
 go 1.25
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/gojuno/minimock/v3 v3.4.5
 	github.com/knadh/koanf/parsers/toml/v2 v2.2.0
 	github.com/knadh/koanf/providers/file v1.2.1

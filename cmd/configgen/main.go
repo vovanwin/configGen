@@ -18,8 +18,10 @@ func main() {
 	pkgName := flag.String("package", "config", "package name for generated code")
 	envPrefix := flag.String("env-prefix", "APP_ENV", "env variable name for environment detection")
 	withLoader := flag.Bool("with-loader", true, "generate configgen_loader.go for runtime loading")
+	withFlags := flag.Bool("with-flags", true, "generate feature flags if flags.toml found")
 	mode := flag.String("mode", "intersect", "schema mode: intersect (common fields) or union (all fields)")
 	initFlag := flag.Bool("init", false, "create initial config files in --configs directory")
+	validateFlag := flag.Bool("validate", false, "validate all TOML files without generating code")
 
 	flag.Parse()
 
@@ -93,12 +95,38 @@ func main() {
 		log.Fatalf("empty schema — no fields found")
 	}
 
+	// Parse flags.toml if present
+	var flagDefs []*model.FlagDef
+	flagsPath := filepath.Join(*configsDir, "flags.toml")
+	if _, err := os.Stat(flagsPath); err == nil {
+		flagDefs, err = parser.ParseFlagsFile(flagsPath)
+		if err != nil {
+			log.Fatalf("parse flags.toml: %v", err)
+		}
+		fmt.Printf("parsed: flags.toml (%d flags)\n", len(flagDefs))
+	}
+
+	// Validate mode: just check everything parses
+	if *validateFlag {
+		fmt.Println()
+		fmt.Println("Validation passed:")
+		fmt.Printf("  - config schema: %d top-level fields\n", len(s))
+		if len(flagDefs) > 0 {
+			fmt.Printf("  - flags: %d feature flags\n", len(flagDefs))
+		}
+		return
+	}
+
 	// Generate code
+	hasFlags := *withFlags && len(flagDefs) > 0
+
 	opts := generator.Options{
 		OutputDir:   *outDir,
 		PackageName: *pkgName,
 		EnvPrefix:   *envPrefix,
 		WithLoader:  *withLoader,
+		WithFlags:   hasFlags,
+		FlagDefs:    flagDefs,
 	}
 
 	if err := generator.Generate(opts, s); err != nil {
@@ -110,6 +138,11 @@ func main() {
 	fmt.Printf("  - %s/configgen_config.go\n", *outDir)
 	if *withLoader {
 		fmt.Printf("  - %s/configgen_loader.go\n", *outDir)
+	}
+	if hasFlags {
+		fmt.Printf("  - %s/configgen_flags.go\n", *outDir)
+		fmt.Printf("  - %s/configgen_flagstore.go\n", *outDir)
+		fmt.Printf("  - %s/configgen_flags_test_helpers.go\n", *outDir)
 	}
 	fmt.Println()
 	fmt.Println("Config files order (runtime):")

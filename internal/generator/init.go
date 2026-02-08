@@ -69,6 +69,13 @@ db = 0
 level = "debug"
 format = "text"
 `,
+
+	"flags.toml": `# flags.toml — feature flags с дефолтными значениями
+# Формат: name = { type = "bool|int|float|string", default = value, description = "..." }
+
+[flags]
+# new_feature = { type = "bool", default = false, description = "Включить новую фичу" }
+`,
 }
 
 // Init создаёт начальные конфиг-файлы в указанной директории

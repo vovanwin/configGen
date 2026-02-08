@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -19,10 +20,12 @@ var templatesFS embed.FS
 
 // Options настройки генерации кода
 type Options struct {
-	OutputDir   string // Директория для сгенерированных файлов
-	PackageName string // Имя пакета
-	EnvPrefix   string // Префикс переменной окружения
-	WithLoader  bool   // Генерировать loader.gen.go
+	OutputDir   string           // Директория для сгенерированных файлов
+	PackageName string           // Имя пакета
+	EnvPrefix   string           // Префикс переменной окружения
+	WithLoader  bool             // Генерировать loader.gen.go
+	WithFlags   bool             // Генерировать flags файлы
+	FlagDefs    []*model.FlagDef // Определения feature flags
 }
 
 // Generate генерирует config.gen.go и опционально loader.gen.go в указанную директорию
@@ -37,6 +40,18 @@ func Generate(opts Options, fields map[string]*model.Field) error {
 
 	if opts.WithLoader {
 		if err := generateLoader(opts, fields); err != nil {
+			return err
+		}
+	}
+
+	if opts.WithFlags && len(opts.FlagDefs) > 0 {
+		if err := generateFlags(opts); err != nil {
+			return err
+		}
+		if err := generateFlagStore(opts); err != nil {
+			return err
+		}
+		if err := generateFlagTestHelpers(opts); err != nil {
 			return err
 		}
 	}
@@ -225,4 +240,142 @@ func needsTime(fields map[string]*model.Field) bool {
 		}
 	}
 	return false
+}
+
+// flagTemplateData данные для одного флага в шаблоне
+type flagTemplateData struct {
+	Name           string
+	TOMLName       string
+	Description    string
+	GetterName     string // Имя геттера (= Name)
+	GoType         string // "bool", "int", "float64", "string"
+	StoreMethod    string // "GetBool", "GetInt", "GetFloat", "GetString"
+	DefaultLiteral string // Литерал дефолта для кода
+}
+
+func buildFlagTemplateData(defs []*model.FlagDef) []flagTemplateData {
+	result := make([]flagTemplateData, 0, len(defs))
+	for _, d := range defs {
+		result = append(result, flagTemplateData{
+			Name:           d.Name,
+			TOMLName:       d.TOMLName,
+			Description:    d.Description,
+			GetterName:     d.Name,
+			GoType:         flagGoType(d.Kind),
+			StoreMethod:    flagStoreMethod(d.Kind),
+			DefaultLiteral: flagDefaultLiteral(d.Default, d.Kind),
+		})
+	}
+	return result
+}
+
+func flagGoType(k model.FlagKind) string {
+	switch k {
+	case model.FlagKindBool:
+		return "bool"
+	case model.FlagKindInt:
+		return "int"
+	case model.FlagKindFloat:
+		return "float64"
+	case model.FlagKindString:
+		return "string"
+	default:
+		return "any"
+	}
+}
+
+func flagStoreMethod(k model.FlagKind) string {
+	switch k {
+	case model.FlagKindBool:
+		return "GetBool"
+	case model.FlagKindInt:
+		return "GetInt"
+	case model.FlagKindFloat:
+		return "GetFloat"
+	case model.FlagKindString:
+		return "GetString"
+	default:
+		return "GetString"
+	}
+}
+
+func flagDefaultLiteral(val any, kind model.FlagKind) string {
+	switch kind {
+	case model.FlagKindBool:
+		if v, ok := val.(bool); ok && v {
+			return "true"
+		}
+		return "false"
+	case model.FlagKindInt:
+		if v, ok := val.(int); ok {
+			return strconv.Itoa(v)
+		}
+		return "0"
+	case model.FlagKindFloat:
+		if v, ok := val.(float64); ok {
+			s := strconv.FormatFloat(v, 'f', -1, 64)
+			if !strings.Contains(s, ".") {
+				s += ".0"
+			}
+			return s
+		}
+		return "0.0"
+	case model.FlagKindString:
+		if v, ok := val.(string); ok {
+			return strconv.Quote(v)
+		}
+		return `""`
+	default:
+		return `""`
+	}
+}
+
+func generateFromTemplate(tmplName, tmplFile, outFile string, data map[string]any) error {
+	tmplB, err := templatesFS.ReadFile(tmplFile)
+	if err != nil {
+		return fmt.Errorf("чтение шаблона %s: %w", tmplName, err)
+	}
+
+	tmpl, err := template.New(tmplName).Funcs(templateFuncs()).Parse(string(tmplB))
+	if err != nil {
+		return fmt.Errorf("парсинг шаблона %s: %w", tmplName, err)
+	}
+
+	buf := &bytes.Buffer{}
+	if err := tmpl.Execute(buf, data); err != nil {
+		return fmt.Errorf("выполнение шаблона %s: %w", tmplName, err)
+	}
+
+	formatted, err := format.Source(buf.Bytes())
+	if err != nil {
+		_ = os.WriteFile(outFile, buf.Bytes(), 0o644)
+		return fmt.Errorf("форматирование %s: %w", tmplName, err)
+	}
+
+	return os.WriteFile(outFile, formatted, 0o644)
+}
+
+func generateFlags(opts Options) error {
+	data := map[string]any{
+		"Package": opts.PackageName,
+		"Flags":   buildFlagTemplateData(opts.FlagDefs),
+	}
+	outFile := filepath.Join(opts.OutputDir, "configgen_flags.go")
+	return generateFromTemplate("flags", "templates/flags.go.tmpl", outFile, data)
+}
+
+func generateFlagStore(opts Options) error {
+	data := map[string]any{
+		"Package": opts.PackageName,
+	}
+	outFile := filepath.Join(opts.OutputDir, "configgen_flagstore.go")
+	return generateFromTemplate("flagstore", "templates/flagstore.go.tmpl", outFile, data)
+}
+
+func generateFlagTestHelpers(opts Options) error {
+	data := map[string]any{
+		"Package": opts.PackageName,
+	}
+	outFile := filepath.Join(opts.OutputDir, "configgen_flags_test_helpers.go")
+	return generateFromTemplate("flags_test_helpers", "templates/flags_test_helpers.go.tmpl", outFile, data)
 }

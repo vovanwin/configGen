@@ -215,6 +215,161 @@ func TestGenerate(t *testing.T) {
 	}
 }
 
+func TestGenerateWithFlags(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	fields := map[string]*model.Field{
+		"host": {Name: "Host", TOMLName: "host", Kind: model.KindString},
+	}
+
+	flagDefs := []*model.FlagDef{
+		{Name: "NewCatalogUi", TOMLName: "new_catalog_ui", Kind: model.FlagKindBool, Default: false, Description: "Новый UI каталога"},
+		{Name: "RateLimit", TOMLName: "rate_limit", Kind: model.FlagKindInt, Default: 100, Description: "Rate limit"},
+		{Name: "Threshold", TOMLName: "threshold", Kind: model.FlagKindFloat, Default: 0.5, Description: "Порог"},
+		{Name: "BannerText", TOMLName: "banner_text", Kind: model.FlagKindString, Default: "hello", Description: "Текст баннера"},
+	}
+
+	opts := Options{
+		OutputDir:   tmpDir,
+		PackageName: "testconfig",
+		WithLoader:  false,
+		WithFlags:   true,
+		FlagDefs:    flagDefs,
+	}
+
+	err := Generate(opts, fields)
+	if err != nil {
+		t.Fatalf("Generate вернул ошибку: %v", err)
+	}
+
+	// Проверяем configgen_flags.go
+	flagsPath := filepath.Join(tmpDir, "configgen_flags.go")
+	flagsContent, err := os.ReadFile(flagsPath)
+	if err != nil {
+		t.Fatalf("не удалось прочитать configgen_flags.go: %v", err)
+	}
+	flagsStr := string(flagsContent)
+
+	if !strings.Contains(flagsStr, "type FlagStore interface") {
+		t.Error("configgen_flags.go должен содержать интерфейс FlagStore")
+	}
+	if !strings.Contains(flagsStr, "type Flags struct") {
+		t.Error("configgen_flags.go должен содержать структуру Flags")
+	}
+	if !strings.Contains(flagsStr, "func (f *Flags) NewCatalogUi() bool") {
+		t.Error("configgen_flags.go должен содержать геттер NewCatalogUi")
+	}
+	if !strings.Contains(flagsStr, "func (f *Flags) RateLimit() int") {
+		t.Error("configgen_flags.go должен содержать геттер RateLimit")
+	}
+	if !strings.Contains(flagsStr, "func (f *Flags) Threshold() float64") {
+		t.Error("configgen_flags.go должен содержать геттер Threshold")
+	}
+	if !strings.Contains(flagsStr, "func (f *Flags) BannerText() string") {
+		t.Error("configgen_flags.go должен содержать геттер BannerText")
+	}
+	if !strings.Contains(flagsStr, "func DefaultFlagValues()") {
+		t.Error("configgen_flags.go должен содержать DefaultFlagValues")
+	}
+	if !strings.Contains(flagsStr, `"new_catalog_ui": false`) {
+		t.Error("configgen_flags.go должен содержать дефолт для new_catalog_ui")
+	}
+	if !strings.Contains(flagsStr, `"rate_limit":     100`) {
+		t.Error("configgen_flags.go должен содержать дефолт для rate_limit")
+	}
+
+	// Проверяем configgen_flagstore.go
+	storePath := filepath.Join(tmpDir, "configgen_flagstore.go")
+	storeContent, err := os.ReadFile(storePath)
+	if err != nil {
+		t.Fatalf("не удалось прочитать configgen_flagstore.go: %v", err)
+	}
+	storeStr := string(storeContent)
+
+	if !strings.Contains(storeStr, "type MemoryStore struct") {
+		t.Error("configgen_flagstore.go должен содержать MemoryStore")
+	}
+	if !strings.Contains(storeStr, "type FileStore struct") {
+		t.Error("configgen_flagstore.go должен содержать FileStore")
+	}
+	if !strings.Contains(storeStr, "func (s *MemoryStore) Set(") {
+		t.Error("configgen_flagstore.go должен содержать метод Set для MemoryStore")
+	}
+
+	// Проверяем configgen_flags_test_helpers.go
+	helpersPath := filepath.Join(tmpDir, "configgen_flags_test_helpers.go")
+	helpersContent, err := os.ReadFile(helpersPath)
+	if err != nil {
+		t.Fatalf("не удалось прочитать configgen_flags_test_helpers.go: %v", err)
+	}
+	helpersStr := string(helpersContent)
+
+	if !strings.Contains(helpersStr, "//go:build !production") {
+		t.Error("configgen_flags_test_helpers.go должен содержать build tag")
+	}
+	if !strings.Contains(helpersStr, "func TestFlags()") {
+		t.Error("configgen_flags_test_helpers.go должен содержать TestFlags")
+	}
+	if !strings.Contains(helpersStr, "func TestFlagsWith(") {
+		t.Error("configgen_flags_test_helpers.go должен содержать TestFlagsWith")
+	}
+}
+
+func TestGenerateWithoutFlags(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	fields := map[string]*model.Field{
+		"host": {Name: "Host", TOMLName: "host", Kind: model.KindString},
+	}
+
+	opts := Options{
+		OutputDir:   tmpDir,
+		PackageName: "config",
+		WithLoader:  false,
+		WithFlags:   false,
+	}
+
+	err := Generate(opts, fields)
+	if err != nil {
+		t.Fatalf("Generate вернул ошибку: %v", err)
+	}
+
+	flagsPath := filepath.Join(tmpDir, "configgen_flags.go")
+	if _, err := os.Stat(flagsPath); !os.IsNotExist(err) {
+		t.Error("configgen_flags.go не должен быть создан когда WithFlags=false")
+	}
+
+	storePath := filepath.Join(tmpDir, "configgen_flagstore.go")
+	if _, err := os.Stat(storePath); !os.IsNotExist(err) {
+		t.Error("configgen_flagstore.go не должен быть создан когда WithFlags=false")
+	}
+}
+
+func TestFlagDefaultLiteral(t *testing.T) {
+	tests := []struct {
+		val      any
+		kind     model.FlagKind
+		expected string
+	}{
+		{false, model.FlagKindBool, "false"},
+		{true, model.FlagKindBool, "true"},
+		{100, model.FlagKindInt, "100"},
+		{0, model.FlagKindInt, "0"},
+		{0.5, model.FlagKindFloat, "0.5"},
+		{0.0, model.FlagKindFloat, "0.0"},
+		{1.0, model.FlagKindFloat, "1.0"},
+		{"hello", model.FlagKindString, `"hello"`},
+		{"", model.FlagKindString, `""`},
+	}
+
+	for _, tt := range tests {
+		result := flagDefaultLiteral(tt.val, tt.kind)
+		if result != tt.expected {
+			t.Errorf("flagDefaultLiteral(%v, %v) = %q, ожидалось %q", tt.val, tt.kind, result, tt.expected)
+		}
+	}
+}
+
 func TestGenerateWithoutLoader(t *testing.T) {
 	tmpDir := t.TempDir()
 
