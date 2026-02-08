@@ -38,9 +38,14 @@ tasks:
       - go run ./cmd/configgen --configs={{.EXAMPLE_CONFIGS}} --init
 
   generate-config:
-    desc: Генерация конфигов для example/service
+    desc: Генерация конфигов и feature flags для example/service
     cmds:
-      - go run ./cmd/configgen --configs={{.EXAMPLE_CONFIGS}} --output={{.EXAMPLE_OUTPUT}} --package=config
+      - go run ./cmd/configgen --configs={{.EXAMPLE_CONFIGS}} --output={{.EXAMPLE_OUTPUT}} --package=config --with-flags
+
+  validate:
+    desc: Валидация TOML файлов без генерации кода
+    cmds:
+      - go run ./cmd/configgen --validate --configs={{.EXAMPLE_CONFIGS}}
 
   mock:gen:
     desc: Генерация моков (go generate)

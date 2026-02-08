@@ -1,6 +1,6 @@
 # ConfigGen
 
-Генератор типобезопасных конфигураций для Go. Читает TOML файлы и генерирует Go структуры + загрузчик на основе [koanf](https://github.com/knadh/koanf).
+Генератор типобезопасных конфигураций для Go. Читает TOML файлы и генерирует Go структуры + загрузчик на основе [koanf](https://github.com/knadh/koanf). Поддерживает **feature flags** с динамическими значениями и разными бэкендами.
 
 ## Установка
 
@@ -10,28 +10,22 @@ go install github.com/vovanwin/configgen/cmd/configgen@latest
 
 ## Как это работает
 
-ConfigGen анализирует ваши TOML файлы конфигурации и генерирует два файла:
+ConfigGen анализирует ваши TOML файлы конфигурации и генерирует:
 
-- **config.gen.go** — Go структуры (`Config`, `Value` и вложенные) с `toml:"..."` тегами
-- **loader.gen.go** — загрузчик на koanf с поддержкой окружений и мержа файлов
+- **configgen_config.go** — Go структуры (`Config` и вложенные) с `toml:"..."` тегами
+- **configgen_loader.go** — загрузчик на koanf с поддержкой окружений и мержа файлов
+- **configgen_flags.go** — `FlagStore` интерфейс + `Flags` struct с типизированными геттерами
+- **configgen_flagstore.go** — `MemoryStore` и `FileStore` реализации
+- **configgen_flags_test_helpers.go** — `TestFlags()` и `TestFlagsWith()` для тестов
 
 ### Логика генерации схемы
 
-Генератор берёт все файлы `config_*.toml` (кроме `config_local.toml`) и строит из них схему полей. Режим задаётся флагом `--mode`:
+Генератор берёт все файлы `config_*.toml` и строит из них схему полей. Режим задаётся флагом `--mode`:
 
-- **intersect** (по умолчанию) — в сгенерированную структуру попадают только поля, которые есть **во всех** файлах конфигурации с одинаковым типом. Если в `config_dev.toml` есть поле `debug = true`, а в `config_prod.toml` его нет — поле не попадёт в структуру.
+- **intersect** (по умолчанию) — в сгенерированную структуру попадают только поля, которые есть **во всех** файлах конфигурации с одинаковым типом.
 - **union** — в структуру попадают **все** поля из всех файлов. При конфликте типов побеждает первый встреченный.
 
 После этого схема мержится с `value.toml` (если есть) через union — поля из обоих источников объединяются.
-
-**Когда появляются новые поля в сгенерированных структурах:**
-1. Вы добавили новую секцию или поле **во все** `config_*.toml` файлы (при `--mode=intersect`)
-2. Вы добавили поле **хотя бы в один** `config_*.toml` (при `--mode=union`)
-3. Вы добавили поле в `value.toml`
-
-**Когда поле пропадёт:**
-1. Вы удалили его из одного из `config_*.toml` при `--mode=intersect`
-2. Вы удалили его из всех `config_*.toml` при `--mode=union`
 
 ### Поддерживаемые типы
 
@@ -59,7 +53,8 @@ your-service/
 │   ├── config_dev.toml      # Development
 │   ├── config_stg.toml      # Staging
 │   ├── config_prod.toml     # Production
-│   └── config_local.toml    # Локальные переопределения (добавьте в .gitignore)
+│   ├── config_local.toml    # Локальные переопределения (.gitignore)
+│   └── flags.toml           # Feature flags (опционально)
 ```
 
 **value.toml** — значения, которые не меняются между окружениями:
@@ -73,21 +68,7 @@ max_connections = 1000
 request_timeout = "30s"
 ```
 
-**config_dev.toml**:
-```toml
-[server]
-host = "localhost"
-port = 8080
-read_timeout = "5s"
-
-[db]
-host = "localhost"
-port = 5432
-name = "myapp_dev"
-pool_size = 5
-```
-
-**config_prod.toml** — те же секции и поля, но с production значениями:
+**config_prod.toml** — production значения:
 ```toml
 [server]
 host = "0.0.0.0"
@@ -101,87 +82,124 @@ name = "myapp_prod"
 pool_size = 50
 ```
 
-### 2. Добавьте go:generate
+### 2. Сгенерируйте код
 
-В `main.go` вашего сервиса:
-```go
-//go:generate go run github.com/vovanwin/configgen/cmd/configgen --configs=./configs --output=./internal/config --package=config
-```
-
-Запустите:
 ```bash
-go generate ./...
+configgen --configs=./configs --output=./internal/config --package=config
 ```
 
-Это создаст `internal/config/config.gen.go` и `internal/config/loader.gen.go`.
+### 3. Добавьте зависимости
 
-### 3. Добавьте зависимость koanf
-
-Сгенерированный загрузчик использует koanf:
 ```bash
 go get github.com/knadh/koanf/v2 github.com/knadh/koanf/parsers/toml/v2 github.com/knadh/koanf/providers/file
+go get github.com/BurntSushi/toml  # если используются feature flags
 ```
 
 ### 4. Используйте в коде
 
 ```go
-package main
+// Статический конфиг
+cfg, err := config.Load(&config.LoadOptions{
+    ConfigDir:      "./configs",
+    EnableOverride: true,
+})
+fmt.Printf("Server: %s:%d\n", cfg.Server.Host, cfg.Server.Port)
 
-import (
-    "fmt"
-    "log"
-    "your-service/internal/config"
-)
-
-func main() {
-    cfg, err := config.Load(&config.LoadOptions{
-        ConfigDir:           "./configs",
-        EnableLocalOverride: true,
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    // Типобезопасный доступ
-    fmt.Printf("Server: %s:%d\n", cfg.Server.Host, cfg.Server.Port)
-    fmt.Printf("DB pool: %d\n", cfg.Db.PoolSize)
-    fmt.Printf("Read timeout: %v\n", cfg.Server.ReadTimeout) // time.Duration
-
-    // Константы из value.toml
-    values := config.GetValue()
-    fmt.Printf("App: %s v%s\n", values.App.Name, values.App.Version)
-
-    // Глобальный доступ (thread-safe)
-    currentCfg := config.Get()
-    _ = currentCfg
-
-    // Проверка окружения
-    if config.IsProduction() {
-        // ...
-    }
+if config.IsProduction() {
+    // ...
 }
 ```
+
+## Feature Flags
+
+### Определение
+
+Создайте `flags.toml` в директории конфигов:
+
+```toml
+[flags]
+new_catalog_ui = { type = "bool", default = false, description = "Включить новый UI каталога" }
+rate_limit = { type = "int", default = 100, description = "Лимит запросов в секунду" }
+score_threshold = { type = "float", default = 0.75, description = "Порог релевантности" }
+banner_text = { type = "string", default = "Welcome!", description = "Текст баннера" }
+```
+
+Поддерживаемые типы: `bool`, `int`, `float`, `string`.
+
+### Использование
+
+```go
+// Создание с MemoryStore (разработка/тесты)
+store := config.NewMemoryStore(config.DefaultFlagValues())
+flags := config.NewFlags(store)
+
+// Типизированные геттеры — дефолты вшиты при генерации
+if flags.NewCatalogUi() {
+    // новый UI
+}
+limit := flags.RateLimit() // int
+
+// Создание с FileStore (CI/интеграционные тесты)
+store, _ := config.NewFileStore("./flags_override.toml", config.DefaultFlagValues())
+flags := config.NewFlags(store)
+```
+
+### В тестах
+
+```go
+// С дефолтами
+flags := config.TestFlags()
+
+// С переопределениями
+flags := config.TestFlagsWith(map[string]any{
+    "new_catalog_ui": true,
+    "rate_limit":     50,
+})
+```
+
+### Бэкенды FlagStore
+
+| Бэкенд | Назначение | Статус |
+|--------|-----------|--------|
+| `MemoryStore` | Тесты, локальная разработка. Thread-safe, с `Set()` | Готов |
+| `FileStore` | CI/интеграционные тесты. Читает TOML override файл | Готов |
+| `EtcdStore` | Production. Watch на изменения | Планируется |
 
 ## Порядок загрузки (runtime)
 
 1. **value.toml** — базовые константы (опционально)
 2. **config_{env}.toml** — значения окружения (обязательно)
-3. **config_local.toml** — локальные переопределения (опционально)
+3. **override.toml** — переопределения для текущего env (опционально)
 
-Каждый следующий файл мержится поверх предыдущего. Окружение определяется из `LoadOptions.Environment` или переменной окружения `APP_ENV` (по умолчанию `dev`).
+Окружение определяется из `LoadOptions.Environment` или переменной окружения `APP_ENV` (по умолчанию `dev`).
 
 ## Сгенерированный API
 
-| Функция          | Описание                              |
-|------------------|---------------------------------------|
-| `Load(opts)`     | Загрузить конфигурацию                |
-| `MustLoad(opts)` | Загрузить или panic                   |
-| `Get()`          | Текущий конфиг (thread-safe)          |
-| `GetValue()`     | Константы из value.toml (thread-safe) |
-| `GetEnv()`       | Текущее окружение                     |
-| `IsProduction()` | `true` если `prod`                    |
-| `IsStg()`        | `true` если `stg`                     |
-| `IsLocal()`      | `true` если `local`                   |
+### Конфигурация
+
+| Функция | Описание |
+|---------|----------|
+| `Load(opts)` | Загрузить конфигурацию |
+| `MustLoad(opts)` | Загрузить или panic |
+| `Get()` | Текущий конфиг (thread-safe) |
+| `GetAll()` | Конфиги всех окружений |
+| `GetEnv()` | Текущее окружение |
+| `IsProduction()` | `true` если `prod` |
+| `IsStg()` | `true` если `stg` |
+| `IsLocal()` | `true` если `local` |
+
+### Feature Flags
+
+| Функция | Описание |
+|---------|----------|
+| `NewFlags(store)` | Создать Flags с бэкендом |
+| `flags.FlagName()` | Типизированный геттер |
+| `flags.Store()` | Доступ к бэкенду |
+| `DefaultFlagValues()` | Дефолтные значения всех флагов |
+| `NewMemoryStore(vals)` | In-memory store |
+| `NewFileStore(path, defaults)` | File-based store |
+| `TestFlags()` | Flags с дефолтами для тестов |
+| `TestFlagsWith(overrides)` | Flags с переопределениями |
 
 ## Флаги CLI
 
@@ -190,9 +208,21 @@ func main() {
 --output       Куда писать сгенерированный код (./internal/config)
 --package      Имя Go пакета (config)
 --env-prefix   Переменная окружения для определения env (APP_ENV)
---with-loader  Генерировать loader.gen.go (true)
+--with-loader  Генерировать loader (true)
+--with-flags   Генерировать feature flags если flags.toml найден (true)
 --mode         Режим схемы: intersect | union (intersect)
+--validate     Проверить все TOML без генерации кода
+--init         Создать шаблонные конфиг-файлы
 ```
+
+## Валидация
+
+```bash
+# Проверить что все TOML валидны без генерации
+configgen --validate --configs=./configs
+```
+
+Подходит для CI pipeline и pre-commit hooks.
 
 ## Пример
 
