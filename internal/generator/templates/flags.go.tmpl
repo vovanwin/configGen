@@ -27,6 +27,11 @@ type Flags struct {
 func NewFlags(store FlagStore) *Flags {
 	return &Flags{store: store}
 }
+
+// Store возвращает бэкенд для прямого доступа (используется в UI и тестах)
+func (f *Flags) Store() FlagStore {
+	return f.store
+}
 {{ range .Flags }}
 {{ if .Description }}// {{ .GetterName }} — {{ .Description }}{{ end }}
 func (f *Flags) {{ .GetterName }}() {{ .GoType }} {
