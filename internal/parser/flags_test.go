@@ -3,6 +3,7 @@ package parser
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/vovanwin/configgen/internal/model"
@@ -140,6 +141,102 @@ new_catalog_ui = { type = "bool", default = false, description = "UI" }
 
 	if defs[0].Name != "NewCatalogUi" {
 		t.Errorf("ожидался Go name \"NewCatalogUi\", получен %q", defs[0].Name)
+	}
+}
+
+func TestParseFlagsFile_Enum(t *testing.T) {
+	content := `
+[flags]
+environment = { type = "enum", values = ["dev", "stg", "prod"], default = "dev", description = "Environment" }
+log_format = { type = "enum", values = ["json", "text"], default = "json", description = "Log format" }
+`
+	path := writeTempFile(t, "flags.toml", content)
+	defs, err := ParseFlagsFile(path)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(defs) != 2 {
+		t.Fatalf("expected 2 flags, got %d", len(defs))
+	}
+
+	// Проверяем environment флаг
+	envFlag := defs[0]
+	if envFlag.Kind != model.FlagKindEnum {
+		t.Errorf("expected enum kind, got %v", envFlag.Kind)
+	}
+	if envFlag.Default != "dev" {
+		t.Errorf("expected default 'dev', got %v", envFlag.Default)
+	}
+	if len(envFlag.EnumValues) != 3 {
+		t.Errorf("expected 3 enum values, got %d", len(envFlag.EnumValues))
+	}
+	expectedValues := []string{"dev", "stg", "prod"}
+	for i, v := range expectedValues {
+		if envFlag.EnumValues[i] != v {
+			t.Errorf("expected enum value %q at position %d, got %q", v, i, envFlag.EnumValues[i])
+		}
+	}
+
+	// Проверяем log_format флаг
+	logFlag := defs[1]
+	if logFlag.Kind != model.FlagKindEnum {
+		t.Errorf("expected enum kind, got %v", logFlag.Kind)
+	}
+	if len(logFlag.EnumValues) != 2 {
+		t.Errorf("expected 2 enum values, got %d", len(logFlag.EnumValues))
+	}
+}
+
+func TestParseFlagsFile_EnumInvalidDefault(t *testing.T) {
+	content := `
+[flags]
+environment = { type = "enum", values = ["dev", "stg"], default = "prod", description = "..." }
+`
+	path := writeTempFile(t, "flags.toml", content)
+	_, err := ParseFlagsFile(path)
+
+	if err == nil {
+		t.Fatal("expected error for invalid enum default")
+	}
+
+	if !strings.Contains(err.Error(), "не входит в values") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestParseFlagsFile_EnumMissingValues(t *testing.T) {
+	content := `
+[flags]
+environment = { type = "enum", default = "dev", description = "..." }
+`
+	path := writeTempFile(t, "flags.toml", content)
+	_, err := ParseFlagsFile(path)
+
+	if err == nil {
+		t.Fatal("expected error for enum without values")
+	}
+
+	if !strings.Contains(err.Error(), "непустой массив values") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestParseFlagsFile_NonEnumWithValues(t *testing.T) {
+	content := `
+[flags]
+rate_limit = { type = "int", values = ["100", "200"], default = 100, description = "..." }
+`
+	path := writeTempFile(t, "flags.toml", content)
+	_, err := ParseFlagsFile(path)
+
+	if err == nil {
+		t.Fatal("expected error for non-enum with values field")
+	}
+
+	if !strings.Contains(err.Error(), "только для enum флагов") {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }
 

@@ -38,6 +38,60 @@ func (f *Flags) BannerText() string {
 	return f.store.GetString("banner_text", "Welcome!")
 }
 
+// EnvironmentEnum допустимые значения для environment
+type EnvironmentEnum string
+
+const (
+	EnvironmentEnumLocal EnvironmentEnum = "local"
+	EnvironmentEnumDev   EnvironmentEnum = "dev"
+	EnvironmentEnumStg   EnvironmentEnum = "stg"
+	EnvironmentEnumProd  EnvironmentEnum = "prod"
+)
+
+// IsValid проверяет что значение входит в список допустимых
+func (e EnvironmentEnum) IsValid() bool {
+	switch e {
+	case EnvironmentEnumLocal:
+		return true
+	case EnvironmentEnumDev:
+		return true
+	case EnvironmentEnumStg:
+		return true
+	case EnvironmentEnumProd:
+		return true
+	}
+	return false
+}
+
+// Environment — Current deployment environment
+func (f *Flags) Environment() EnvironmentEnum {
+	return EnvironmentEnum(f.store.GetString("environment", string(EnvironmentEnumLocal)))
+}
+
+// LogFormatEnum допустимые значения для log_format
+type LogFormatEnum string
+
+const (
+	LogFormatEnumJson LogFormatEnum = "json"
+	LogFormatEnumText LogFormatEnum = "text"
+)
+
+// IsValid проверяет что значение входит в список допустимых
+func (e LogFormatEnum) IsValid() bool {
+	switch e {
+	case LogFormatEnumJson:
+		return true
+	case LogFormatEnumText:
+		return true
+	}
+	return false
+}
+
+// LogFormat — Log output format
+func (f *Flags) LogFormat() LogFormatEnum {
+	return LogFormatEnum(f.store.GetString("log_format", string(LogFormatEnumJson)))
+}
+
 // NewCatalogUi — Включить новый UI каталога
 func (f *Flags) NewCatalogUi() bool {
 	return f.store.GetBool("new_catalog_ui", false)
@@ -57,6 +111,8 @@ func (f *Flags) ScoreThreshold() float64 {
 func DefaultFlagValues() map[string]any {
 	return map[string]any{
 		"banner_text":     "Welcome!",
+		"environment":     string(EnvironmentEnumLocal),
+		"log_format":      string(LogFormatEnumJson),
 		"new_catalog_ui":  false,
 		"rate_limit":      100,
 		"score_threshold": 0.75,

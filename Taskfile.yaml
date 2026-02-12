@@ -40,7 +40,7 @@ tasks:
   generate-config:
     desc: Генерация конфигов и feature flags для example/service
     cmds:
-      - go run ./cmd/configgen --configs={{.EXAMPLE_CONFIGS}} --output={{.EXAMPLE_OUTPUT}} --package=config --with-flags
+      - go run ./cmd/configgen --configs={{.EXAMPLE_CONFIGS}} --output={{.EXAMPLE_OUTPUT}} --package=config --with-flags --with-env-override --env-var-prefix=APP_
 
   validate:
     desc: Валидация TOML файлов без генерации кода

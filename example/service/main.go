@@ -12,6 +12,7 @@ import (
 func main() {
 	cfg, err := config.Load(&config.LoadOptions{
 		ConfigDir: "./configs",
+		EnableEnv: true, // Включаем env var override
 	})
 	if err != nil {
 		log.Fatalf("Ошибка загрузки конфига: %v", err)
@@ -58,4 +59,17 @@ func main() {
 	} else {
 		fmt.Println("Режим: Local")
 	}
+	fmt.Println()
+
+	// Feature Flags
+	fmt.Println("--- Feature Flags ---")
+	flagStore := config.NewMemoryStore(config.DefaultFlagValues())
+	flags := config.NewFlags(flagStore)
+
+	fmt.Printf("NewCatalogUi: %v\n", flags.NewCatalogUi())
+	fmt.Printf("RateLimit: %d\n", flags.RateLimit())
+	fmt.Printf("ScoreThreshold: %.2f\n", flags.ScoreThreshold())
+	fmt.Printf("BannerText: %s\n", flags.BannerText())
+	fmt.Printf("Environment: %s (enum)\n", flags.Environment())
+	fmt.Printf("LogFormat: %s (enum)\n", flags.LogFormat())
 }

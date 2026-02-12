@@ -19,6 +19,8 @@ func main() {
 	envPrefix := flag.String("env-prefix", "APP_ENV", "env variable name for environment detection")
 	withLoader := flag.Bool("with-loader", true, "generate configgen_loader.go for runtime loading")
 	withFlags := flag.Bool("with-flags", true, "generate feature flags if flags.toml found")
+	withEnvOverride := flag.Bool("with-env-override", false, "enable env var override in loader")
+	envVarPrefix := flag.String("env-var-prefix", "", "prefix for env var override (e.g., APP_)")
 	mode := flag.String("mode", "intersect", "schema mode: intersect (common fields) or union (all fields)")
 	initFlag := flag.Bool("init", false, "create initial config files in --configs directory")
 	validateFlag := flag.Bool("validate", false, "validate all TOML files without generating code")
@@ -120,13 +122,19 @@ func main() {
 	// Generate code
 	hasFlags := *withFlags && len(flagDefs) > 0
 
+	if *withEnvOverride && *envVarPrefix == "" {
+		log.Fatalf("--env-var-prefix is required when --with-env-override is enabled")
+	}
+
 	opts := generator.Options{
-		OutputDir:   *outDir,
-		PackageName: *pkgName,
-		EnvPrefix:   *envPrefix,
-		WithLoader:  *withLoader,
-		WithFlags:   hasFlags,
-		FlagDefs:    flagDefs,
+		OutputDir:       *outDir,
+		PackageName:     *pkgName,
+		EnvPrefix:       *envPrefix,
+		WithLoader:      *withLoader,
+		WithFlags:       hasFlags,
+		FlagDefs:        flagDefs,
+		WithEnvOverride: *withEnvOverride,
+		EnvVarPrefix:    *envVarPrefix,
 	}
 
 	if err := generator.Generate(opts, s); err != nil {

@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/knadh/koanf/parsers/toml/v2"
+	kenv "github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 )
@@ -32,6 +33,12 @@ type LoadOptions struct {
 
 	// EnableOverride позволяет override.toml переопределять значения текущего окружения
 	EnableOverride bool
+
+	// EnableEnv позволяет env vars переопределять значения из файлов
+	// Разделитель секций — двойное подчёркивание (__), одинарное (_) сохраняется
+	// Пример: APP_SERVER__HOST=localhost переопределяет server.host
+	// Пример: APP_DB__MAX_OPEN_CONNS=10 переопределяет db.max_open_conns
+	EnableEnv bool
 }
 
 // Load загружает все конфигурации окружений и выбирает нужную
@@ -65,8 +72,14 @@ func Load(opts *LoadOptions) (*Config, error) {
 
 	configs := make(map[Environment]*Config)
 
+	needReload := opts.EnableOverride || opts.EnableEnv
+
 	for _, match := range matches {
 		envName := envFromFilename(filepath.Base(match))
+
+		if needReload && Environment(envName) == env {
+			continue
+		}
 
 		cfg, err := loadSingle(valuePath, hasValue, match)
 		if err != nil {
@@ -76,31 +89,51 @@ func Load(opts *LoadOptions) (*Config, error) {
 		configs[cfg.Env] = cfg
 	}
 
-	// Для текущего окружения применяем override.toml
-	if opts.EnableOverride {
-		overridePath := filepath.Join(opts.ConfigDir, "override.toml")
-		if fileExists(overridePath) {
-			envPath := filepath.Join(opts.ConfigDir, fmt.Sprintf("config_%s.toml", env))
-			if fileExists(envPath) {
-				k := koanf.New(".")
-				if hasValue {
-					if err := k.Load(file.Provider(valuePath), toml.Parser()); err != nil {
-						return nil, fmt.Errorf("загрузка value.toml: %w", err)
+	// Для текущего окружения: value.toml → config_{env}.toml → override.toml → env vars
+	if needReload {
+		envPath := filepath.Join(opts.ConfigDir, fmt.Sprintf("config_%s.toml", env))
+		if fileExists(envPath) {
+			k := koanf.New(".")
+
+			if hasValue {
+				if err := k.Load(file.Provider(valuePath), toml.Parser()); err != nil {
+					return nil, fmt.Errorf("загрузка value.toml: %w", err)
+				}
+			}
+
+			if err := k.Load(file.Provider(envPath), toml.Parser()); err != nil {
+				return nil, fmt.Errorf("загрузка config_%s.toml: %w", env, err)
+			}
+
+			if opts.EnableOverride {
+				overridePath := filepath.Join(opts.ConfigDir, "override.toml")
+				if fileExists(overridePath) {
+					if err := k.Load(file.Provider(overridePath), toml.Parser()); err != nil {
+						return nil, fmt.Errorf("загрузка override.toml: %w", err)
 					}
 				}
-				if err := k.Load(file.Provider(envPath), toml.Parser()); err != nil {
-					return nil, fmt.Errorf("загрузка config_%s.toml: %w", env, err)
-				}
-				if err := k.Load(file.Provider(overridePath), toml.Parser()); err != nil {
-					return nil, fmt.Errorf("загрузка override.toml: %w", err)
-				}
-				cfg := &Config{}
-				if err := k.UnmarshalWithConf("", cfg, koanf.UnmarshalConf{Tag: "toml"}); err != nil {
-					return nil, fmt.Errorf("декодирование конфига: %w", err)
-				}
-				cfg.Env = env
-				configs[env] = cfg
 			}
+
+			if opts.EnableEnv {
+				envPrefix := "APP_"
+				if err := k.Load(kenv.Provider(envPrefix, ".", func(s string) string {
+					// APP_SERVER__HOST -> server.host
+					// APP_DB__MAX_IDLE_TIME -> db.max_idle_time
+					s = strings.TrimPrefix(s, envPrefix)
+					s = strings.ToLower(s)
+					s = strings.ReplaceAll(s, "__", ".")
+					return s
+				}), nil); err != nil {
+					return nil, fmt.Errorf("загрузка env vars: %w", err)
+				}
+			}
+
+			cfg := &Config{}
+			if err := k.UnmarshalWithConf("", cfg, koanf.UnmarshalConf{Tag: "toml"}); err != nil {
+				return nil, fmt.Errorf("декодирование конфига: %w", err)
+			}
+			cfg.Env = env
+			configs[env] = cfg
 		}
 	}
 

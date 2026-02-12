@@ -398,3 +398,94 @@ func TestGenerateWithoutLoader(t *testing.T) {
 		t.Error("configgen_loader.go не должен быть создан когда WithLoader=false")
 	}
 }
+
+func TestGenerateWithEnumFlags(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	flagDefs := []*model.FlagDef{
+		{
+			Name:        "Environment",
+			TOMLName:    "environment",
+			Kind:        model.FlagKindEnum,
+			Default:     "dev",
+			Description: "Deployment environment",
+			EnumValues:  []string{"dev", "stg", "prod"},
+		},
+		{
+			Name:        "LogFormat",
+			TOMLName:    "log_format",
+			Kind:        model.FlagKindEnum,
+			Default:     "json",
+			Description: "Log output format",
+			EnumValues:  []string{"json", "text"},
+		},
+	}
+
+	opts := Options{
+		OutputDir:   tmpDir,
+		PackageName: "testconfig",
+		WithFlags:   true,
+		FlagDefs:    flagDefs,
+	}
+
+	err := Generate(opts, nil)
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Проверяем сгенерированный код
+	flagsPath := filepath.Join(tmpDir, "configgen_flags.go")
+	content, err := os.ReadFile(flagsPath)
+	if err != nil {
+		t.Fatalf("не удалось прочитать configgen_flags.go: %v", err)
+	}
+	flagsStr := string(content)
+
+	// Проверяем enum типы
+	if !strings.Contains(flagsStr, "type EnvironmentEnum string") {
+		t.Error("enum type EnvironmentEnum not generated")
+	}
+	if !strings.Contains(flagsStr, "type LogFormatEnum string") {
+		t.Error("enum type LogFormatEnum not generated")
+	}
+
+	// Проверяем константы (go fmt может выравнивать пробелы)
+	if !strings.Contains(flagsStr, `EnvironmentEnumDev`) || !strings.Contains(flagsStr, `= "dev"`) {
+		t.Error("enum const EnvironmentEnumDev not generated")
+	}
+	if !strings.Contains(flagsStr, `EnvironmentEnumStg`) || !strings.Contains(flagsStr, `= "stg"`) {
+		t.Error("enum const EnvironmentEnumStg not generated")
+	}
+	if !strings.Contains(flagsStr, `LogFormatEnumJson`) || !strings.Contains(flagsStr, `= "json"`) {
+		t.Error("enum const LogFormatEnumJson not generated")
+	}
+
+	// Проверяем IsValid
+	if !strings.Contains(flagsStr, "func (e EnvironmentEnum) IsValid() bool") {
+		t.Error("IsValid for EnvironmentEnum not generated")
+	}
+
+	// Проверяем геттеры возвращают enum тип
+	if !strings.Contains(flagsStr, "func (f *Flags) Environment() EnvironmentEnum") {
+		t.Error("enum getter Environment not generated")
+	}
+	if !strings.Contains(flagsStr, "func (f *Flags) LogFormat() LogFormatEnum") {
+		t.Error("enum getter LogFormat not generated")
+	}
+
+	// Проверяем использование GetString внутри геттера
+	if !strings.Contains(flagsStr, `GetString("environment"`) {
+		t.Error("enum store method not correct for Environment")
+	}
+	if !strings.Contains(flagsStr, `GetString("log_format"`) {
+		t.Error("enum store method not correct for LogFormat")
+	}
+
+	// Проверяем дефолты в DefaultFlagValues
+	if !strings.Contains(flagsStr, `"environment"`) {
+		t.Error("default value for environment not in DefaultFlagValues")
+	}
+	if !strings.Contains(flagsStr, `"log_format"`) {
+		t.Error("default value for log_format not in DefaultFlagValues")
+	}
+}

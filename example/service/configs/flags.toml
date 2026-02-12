@@ -5,3 +5,5 @@ new_catalog_ui = { type = "bool", default = false, description = "Включит
 rate_limit = { type = "int", default = 100, description = "Лимит запросов в секунду" }
 score_threshold = { type = "float", default = 0.75, description = "Порог релевантности" }
 banner_text = { type = "string", default = "Welcome!", description = "Текст баннера" }
+environment = { type = "enum", values = ["local", "dev", "stg", "prod"], default = "local", description = "Current deployment environment" }
+log_format = { type = "enum", values = ["json", "text"], default = "json", description = "Log output format" }

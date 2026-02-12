@@ -11,9 +11,10 @@ import (
 
 // flagEntry представляет один флаг из flags.toml
 type flagEntry struct {
-	Type        string `toml:"type"`
-	Default     any    `toml:"default"`
-	Description string `toml:"description"`
+	Type        string   `toml:"type"`
+	Default     any      `toml:"default"`
+	Description string   `toml:"description"`
+	Values      []string `toml:"values"`
 }
 
 // flagsFile корневая структура flags.toml
@@ -59,6 +60,32 @@ func flagEntryToDef(name string, entry flagEntry) (*model.FlagDef, error) {
 		return nil, err
 	}
 
+	// Валидация enum
+	if kind == model.FlagKindEnum {
+		if len(entry.Values) == 0 {
+			return nil, fmt.Errorf("enum флаг должен иметь непустой массив values")
+		}
+
+		// Проверяем что default входит в values
+		defaultStr, ok := entry.Default.(string)
+		if !ok {
+			return nil, fmt.Errorf("default для enum флага должен быть строкой, получен %T", entry.Default)
+		}
+
+		valid := false
+		for _, v := range entry.Values {
+			if v == defaultStr {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return nil, fmt.Errorf("default %q не входит в values %v", defaultStr, entry.Values)
+		}
+	} else if len(entry.Values) > 0 {
+		return nil, fmt.Errorf("поле values разрешено только для enum флагов")
+	}
+
 	def, err := coerceDefault(entry.Default, kind)
 	if err != nil {
 		return nil, fmt.Errorf("default: %w", err)
@@ -70,6 +97,7 @@ func flagEntryToDef(name string, entry flagEntry) (*model.FlagDef, error) {
 		Kind:        kind,
 		Default:     def,
 		Description: entry.Description,
+		EnumValues:  entry.Values,
 	}, nil
 }
 
@@ -83,8 +111,10 @@ func parseFlagKind(t string) (model.FlagKind, error) {
 		return model.FlagKindFloat, nil
 	case "string":
 		return model.FlagKindString, nil
+	case "enum":
+		return model.FlagKindEnum, nil
 	default:
-		return 0, fmt.Errorf("неподдерживаемый тип %q (допустимы: bool, int, float, string)", t)
+		return 0, fmt.Errorf("неподдерживаемый тип %q (допустимы: bool, int, float, string, enum)", t)
 	}
 }
 
@@ -120,6 +150,13 @@ func coerceDefault(val any, kind model.FlagKind) (any, error) {
 		v, ok := val.(string)
 		if !ok {
 			return nil, fmt.Errorf("ожидался string, получен %T", val)
+		}
+		return v, nil
+	case model.FlagKindEnum:
+		// Enum обрабатывается как string
+		v, ok := val.(string)
+		if !ok {
+			return nil, fmt.Errorf("ожидался string для enum, получен %T", val)
 		}
 		return v, nil
 	default:

@@ -33,16 +33,44 @@ func (f *Flags) Store() FlagStore {
 	return f.store
 }
 {{ range .Flags }}
+{{- if .IsEnum }}
+// {{ .EnumTypeName }} допустимые значения для {{ .TOMLName }}
+type {{ .EnumTypeName }} string
+
+const (
+{{- $enumType := .EnumTypeName }}
+{{- range .EnumConsts }}
+	{{ .ConstName }} {{ $enumType }} = "{{ .Value }}"
+{{- end }}
+)
+
+// IsValid проверяет что значение входит в список допустимых
+func (e {{ .EnumTypeName }}) IsValid() bool {
+	switch e {
+{{- range .EnumConsts }}
+	case {{ .ConstName }}:
+		return true
+{{- end }}
+	}
+	return false
+}
+
+// {{ .GetterName }} — {{ .Description }}
+func (f *Flags) {{ .GetterName }}() {{ .EnumTypeName }} {
+	return {{ .EnumTypeName }}(f.store.GetString("{{ .TOMLName }}", string({{ .DefaultLiteral }})))
+}
+{{ else }}
 {{ if .Description }}// {{ .GetterName }} — {{ .Description }}{{ end }}
 func (f *Flags) {{ .GetterName }}() {{ .GoType }} {
 	return f.store.{{ .StoreMethod }}("{{ .TOMLName }}", {{ .DefaultLiteral }})
 }
 {{ end }}
+{{- end }}
 // DefaultFlagValues возвращает дефолтные значения всех флагов
 func DefaultFlagValues() map[string]any {
 	return map[string]any{
 {{- range .Flags }}
-		"{{ .TOMLName }}": {{ .DefaultLiteral }},
+		"{{ .TOMLName }}": {{ if .IsEnum }}string({{ .DefaultLiteral }}){{ else }}{{ .DefaultLiteral }}{{ end }},
 {{- end }}
 	}
 }

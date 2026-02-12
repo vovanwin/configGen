@@ -8,6 +8,7 @@ const (
 	FlagKindInt
 	FlagKindFloat
 	FlagKindString
+	FlagKindEnum
 )
 
 func (k FlagKind) String() string {
@@ -20,6 +21,8 @@ func (k FlagKind) String() string {
 		return "float64"
 	case FlagKindString:
 		return "string"
+	case FlagKindEnum:
+		return "enum"
 	default:
 		return "unknown"
 	}
@@ -32,4 +35,5 @@ type FlagDef struct {
 	Kind        FlagKind // Тип значения
 	Default     any      // Типизированный дефолт
 	Description string   // Описание флага
+	EnumValues  []string // Допустимые значения для enum типа (пусто для не-enum)
 }

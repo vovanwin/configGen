@@ -20,12 +20,14 @@ var templatesFS embed.FS
 
 // Options настройки генерации кода
 type Options struct {
-	OutputDir   string           // Директория для сгенерированных файлов
-	PackageName string           // Имя пакета
-	EnvPrefix   string           // Префикс переменной окружения
-	WithLoader  bool             // Генерировать loader.gen.go
-	WithFlags   bool             // Генерировать flags файлы
-	FlagDefs    []*model.FlagDef // Определения feature flags
+	OutputDir       string           // Директория для сгенерированных файлов
+	PackageName     string           // Имя пакета
+	EnvPrefix       string           // Префикс переменной окружения
+	WithLoader      bool             // Генерировать loader.gen.go
+	WithFlags       bool             // Генерировать flags файлы
+	FlagDefs        []*model.FlagDef // Определения feature flags
+	WithEnvOverride bool             // Включить env var override в loader
+	EnvVarPrefix    string           // Префикс для env vars (например, "APP_")
 }
 
 // Generate генерирует config.gen.go и опционально loader.gen.go в указанную директорию
@@ -109,8 +111,10 @@ func generateLoader(opts Options, fields map[string]*model.Field) error {
 
 	buf := &bytes.Buffer{}
 	data := map[string]any{
-		"Package":   opts.PackageName,
-		"EnvPrefix": opts.EnvPrefix,
+		"Package":         opts.PackageName,
+		"EnvPrefix":       opts.EnvPrefix,
+		"WithEnvOverride": opts.WithEnvOverride,
+		"EnvVarPrefix":    opts.EnvVarPrefix,
 	}
 
 	if err := tmpl.Execute(buf, data); err != nil {
@@ -242,21 +246,30 @@ func needsTime(fields map[string]*model.Field) bool {
 	return false
 }
 
+// enumConstData одна константа enum
+type enumConstData struct {
+	ConstName string // e.g. EnvironmentLocal
+	Value     string // e.g. "local"
+}
+
 // flagTemplateData данные для одного флага в шаблоне
 type flagTemplateData struct {
 	Name           string
 	TOMLName       string
 	Description    string
 	GetterName     string // Имя геттера (= Name)
-	GoType         string // "bool", "int", "float64", "string"
+	GoType         string // "bool", "int", "float64", "string", или "EnvironmentEnum"
 	StoreMethod    string // "GetBool", "GetInt", "GetFloat", "GetString"
 	DefaultLiteral string // Литерал дефолта для кода
+	IsEnum         bool
+	EnumTypeName   string          // e.g. "EnvironmentEnum"
+	EnumConsts     []enumConstData // константы enum
 }
 
 func buildFlagTemplateData(defs []*model.FlagDef) []flagTemplateData {
 	result := make([]flagTemplateData, 0, len(defs))
 	for _, d := range defs {
-		result = append(result, flagTemplateData{
+		fd := flagTemplateData{
 			Name:           d.Name,
 			TOMLName:       d.TOMLName,
 			Description:    d.Description,
@@ -264,9 +277,36 @@ func buildFlagTemplateData(defs []*model.FlagDef) []flagTemplateData {
 			GoType:         flagGoType(d.Kind),
 			StoreMethod:    flagStoreMethod(d.Kind),
 			DefaultLiteral: flagDefaultLiteral(d.Default, d.Kind),
-		})
+		}
+		if d.Kind == model.FlagKindEnum {
+			fd.IsEnum = true
+			fd.EnumTypeName = d.Name + "Enum"
+			fd.GoType = fd.EnumTypeName
+			fd.DefaultLiteral = fd.EnumTypeName + toExportedName(d.Default.(string))
+			consts := make([]enumConstData, 0, len(d.EnumValues))
+			for _, v := range d.EnumValues {
+				consts = append(consts, enumConstData{
+					ConstName: fd.EnumTypeName + toExportedName(v),
+					Value:     v,
+				})
+			}
+			fd.EnumConsts = consts
+		}
+		result = append(result, fd)
 	}
 	return result
+}
+
+func toExportedName(s string) string {
+	parts := strings.Split(s, "_")
+	var b strings.Builder
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		b.WriteString(strings.ToUpper(p[:1]) + p[1:])
+	}
+	return b.String()
 }
 
 func flagGoType(k model.FlagKind) string {
@@ -277,7 +317,7 @@ func flagGoType(k model.FlagKind) string {
 		return "int"
 	case model.FlagKindFloat:
 		return "float64"
-	case model.FlagKindString:
+	case model.FlagKindString, model.FlagKindEnum:
 		return "string"
 	default:
 		return "any"
@@ -292,7 +332,7 @@ func flagStoreMethod(k model.FlagKind) string {
 		return "GetInt"
 	case model.FlagKindFloat:
 		return "GetFloat"
-	case model.FlagKindString:
+	case model.FlagKindString, model.FlagKindEnum:
 		return "GetString"
 	default:
 		return "GetString"
@@ -320,7 +360,7 @@ func flagDefaultLiteral(val any, kind model.FlagKind) string {
 			return s
 		}
 		return "0.0"
-	case model.FlagKindString:
+	case model.FlagKindString, model.FlagKindEnum:
 		if v, ok := val.(string); ok {
 			return strconv.Quote(v)
 		}
