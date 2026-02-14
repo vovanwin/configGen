@@ -10,13 +10,15 @@ import (
 //go:generate go run github.com/vovanwin/configgen/cmd/configgen --configs=./configs --output=./internal/config --package=config
 
 func main() {
-	cfg, err := config.Load(&config.LoadOptions{
+	result, err := config.LoadWithFlags(&config.LoadOptions{
 		ConfigDir: "./configs",
 		EnableEnv: true, // Включаем env var override
 	})
 	if err != nil {
 		log.Fatalf("Ошибка загрузки конфига: %v", err)
 	}
+
+	cfg := result.Config
 
 	fmt.Println("=== Конфигурация загружена ===")
 	fmt.Printf("Окружение: %s\n", config.GetEnv())
@@ -51,6 +53,13 @@ func main() {
 	fmt.Printf("EnableTracing: %v\n", cfg.Features.EnableTracing)
 	fmt.Println()
 
+	fmt.Println("--- OAuth (nested sections) ---")
+	fmt.Printf("Github ClientId: %s\n", cfg.Oauth.Github.ClientId)
+	fmt.Printf("Github RedirectUrl: %s\n", cfg.Oauth.Github.RedirectUrl)
+	fmt.Printf("VK ClientId: %s\n", cfg.Oauth.Vk.ClientId)
+	fmt.Printf("VK RedirectUrl: %s\n", cfg.Oauth.Vk.RedirectUrl)
+	fmt.Println()
+
 	fmt.Println("--- Environment Check ---")
 	if config.IsProduction() {
 		fmt.Println("Режим: PRODUCTION")
@@ -61,11 +70,9 @@ func main() {
 	}
 	fmt.Println()
 
-	// Feature Flags
+	// Feature Flags (загружены из LoadWithFlags, с override из [flags] секции)
 	fmt.Println("--- Feature Flags ---")
-	flagStore := config.NewMemoryStore(config.DefaultFlagValues())
-	flags := config.NewFlags(flagStore)
-
+	flags := result.Flags
 	fmt.Printf("NewCatalogUi: %v\n", flags.NewCatalogUi())
 	fmt.Printf("RateLimit: %d\n", flags.RateLimit())
 	fmt.Printf("ScoreThreshold: %.2f\n", flags.ScoreThreshold())

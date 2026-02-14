@@ -26,6 +26,7 @@ type Config struct {
 	// Лимиты и ограничения
 	Limits Limits `toml:"limits"`
 	Log    Log    `toml:"log"`
+	Oauth  Oauth  `toml:"oauth"`
 	Redis  Redis  `toml:"redis"`
 	Server Server `toml:"server"`
 }
@@ -46,15 +47,12 @@ type Configurator interface {
 }
 
 // Информация о приложении
-// App секция конфигурации
 type App struct {
 	// Название сервиса
 	Name string `toml:"name"`
 	// Версия приложения
 	Version string `toml:"version"`
 }
-
-// Db секция конфигурации
 type Db struct {
 	// Хост базы данных
 	Host string `toml:"host"`
@@ -73,7 +71,6 @@ type Db struct {
 }
 
 // Переключатели функций
-// Features секция конфигурации
 type Features struct {
 	// Включить сбор метрик
 	EnableMetrics bool `toml:"enable_metrics"`
@@ -82,7 +79,6 @@ type Features struct {
 }
 
 // Лимиты и ограничения
-// Limits секция конфигурации
 type Limits struct {
 	// Максимальное количество одновременных соединений
 	MaxConnections int `toml:"max_connections"`
@@ -91,16 +87,24 @@ type Limits struct {
 	// Таймаут обработки запроса
 	RequestTimeout time.Duration `toml:"request_timeout"`
 }
-
-// Log секция конфигурации
 type Log struct {
 	// Формат вывода: text или json
 	Format string `toml:"format"`
 	// Уровень логирования: debug, info, warn, error
 	Level string `toml:"level"`
 }
-
-// Redis секция конфигурации
+type Oauth struct {
+	Github OauthGithub `toml:"github"`
+	Vk     OauthVk     `toml:"vk"`
+}
+type OauthGithub struct {
+	ClientId    string `toml:"client_id"`
+	RedirectUrl string `toml:"redirect_url"`
+}
+type OauthVk struct {
+	ClientId    string `toml:"client_id"`
+	RedirectUrl string `toml:"redirect_url"`
+}
 type Redis struct {
 	// Номер базы данных
 	Db int `toml:"db"`
@@ -109,8 +113,6 @@ type Redis struct {
 	// Порт Redis
 	Port int `toml:"port"`
 }
-
-// Server секция конфигурации
 type Server struct {
 	// Адрес для прослушивания
 	Host string `toml:"host"`

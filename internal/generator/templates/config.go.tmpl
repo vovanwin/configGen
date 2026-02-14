@@ -43,24 +43,19 @@ type Configurator interface {
 	GetEnv() string
 }
 
-{{/* Генерируем вложенные структуры */}}
-{{- range $i, $k := .Keys }}
-{{- $f := index $.Fields $k }}
-{{- if eq $f.Kind 4 }}
+{{/* Генерируем все вложенные структуры (рекурсивно) */}}
+{{- range $i, $obj := .Objects }}
 
-{{- if hasComment $f.Comment }}
-{{ formatComment $f.Comment }}
+{{- if hasComment $obj.Comment }}
+{{ formatComment $obj.Comment }}
 {{- end }}
-// {{ $f.Name }} секция конфигурации
-type {{ $f.Name }} struct {
-{{- $keys := keys $f.Children }}
-{{- range $j, $kk := $keys }}
-{{- $cf := index $f.Children $kk }}
+type {{ $obj.StructName }} struct {
+{{- range $j, $kk := $obj.Keys }}
+{{- $cf := index $obj.Children $kk }}
 {{- if hasComment $cf.Comment }}
 	{{ formatComment $cf.Comment }}
 {{- end }}
 	{{ $cf.Name }} {{ GoType $cf }} `toml:"{{ $cf.TOMLName }}"`
 {{- end }}
 }
-{{- end }}
 {{- end }}

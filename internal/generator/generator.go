@@ -61,6 +61,39 @@ func Generate(opts Options, fields map[string]*model.Field) error {
 	return nil
 }
 
+// objectData описывает один KindObject для шаблона
+type objectData struct {
+	StructName string
+	Comment    string
+	Children   map[string]*model.Field
+	Keys       []string
+}
+
+// collectAllObjects рекурсивно собирает все KindObject поля в плоский список
+func collectAllObjects(fields map[string]*model.Field) []objectData {
+	var result []objectData
+	keys := sortedKeys(fields)
+	for _, k := range keys {
+		f := fields[k]
+		if f.Kind != model.KindObject {
+			continue
+		}
+		structName := f.StructName
+		if structName == "" {
+			structName = toGoStructName(f.TOMLName)
+		}
+		result = append(result, objectData{
+			StructName: structName,
+			Comment:    f.Comment,
+			Children:   f.Children,
+			Keys:       sortedKeys(f.Children),
+		})
+		// Рекурсивно собираем вложенные объекты
+		result = append(result, collectAllObjects(f.Children)...)
+	}
+	return result
+}
+
 // generateConfig генерирует config.gen.go
 func generateConfig(opts Options, fields map[string]*model.Field) error {
 	tmplB, err := templatesFS.ReadFile("templates/config.go.tmpl")
@@ -74,12 +107,14 @@ func generateConfig(opts Options, fields map[string]*model.Field) error {
 	}
 
 	keys := sortedKeys(fields)
+	objects := collectAllObjects(fields)
 
 	buf := &bytes.Buffer{}
 	data := map[string]any{
 		"Package": opts.PackageName,
 		"Fields":  fields,
 		"Keys":    keys,
+		"Objects": objects,
 	}
 
 	if err := tmpl.Execute(buf, data); err != nil {
@@ -115,6 +150,7 @@ func generateLoader(opts Options, fields map[string]*model.Field) error {
 		"EnvPrefix":       opts.EnvPrefix,
 		"WithEnvOverride": opts.WithEnvOverride,
 		"EnvVarPrefix":    opts.EnvVarPrefix,
+		"WithFlags":       opts.WithFlags,
 	}
 
 	if err := tmpl.Execute(buf, data); err != nil {
@@ -180,6 +216,9 @@ func goType(f *model.Field) string {
 	case model.KindSlice:
 		return "[]" + goItemType(f.ItemKind)
 	case model.KindObject:
+		if f.StructName != "" {
+			return f.StructName
+		}
 		return toGoStructName(f.TOMLName)
 	default:
 		return "any"

@@ -37,6 +37,15 @@ port = 6379
 # Номер базы данных
 db = 0
 
+# OAuth провайдеры
+[oauth.github]
+client_id = "prod_github_id"
+redirect_url = "https://myapp.com/auth/github/callback"
+
+[oauth.vk]
+client_id = "prod_vk_id"
+redirect_url = "https://myapp.com/auth/vk/callback"
+
 # Настройки логирования
 [log]
 # Уровень логирования: debug, info, warn, error

@@ -88,29 +88,3 @@ func Merge(maps ...map[string]*model.Field) map[string]*model.Field {
 	}
 	return result
 }
-
-// Union возвращает все поля из всех map
-func Union(maps ...map[string]*model.Field) map[string]*model.Field {
-	if len(maps) == 0 {
-		return nil
-	}
-
-	result := make(map[string]*model.Field)
-	for _, m := range maps {
-		for k, f := range m {
-			if existing, ok := result[k]; ok {
-				if existing.Kind == model.KindObject && f.Kind == model.KindObject {
-					result[k] = &model.Field{
-						Name:     f.Name,
-						TOMLName: f.TOMLName,
-						Kind:     model.KindObject,
-						Children: Union(existing.Children, f.Children),
-					}
-				}
-			} else {
-				result[k] = f
-			}
-		}
-	}
-	return result
-}

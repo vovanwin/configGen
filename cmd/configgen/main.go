@@ -21,7 +21,6 @@ func main() {
 	withFlags := flag.Bool("with-flags", true, "generate feature flags if flags.toml found")
 	withEnvOverride := flag.Bool("with-env-override", false, "enable env var override in loader")
 	envVarPrefix := flag.String("env-var-prefix", "", "prefix for env var override (e.g., APP_)")
-	mode := flag.String("mode", "intersect", "schema mode: intersect (common fields) or union (all fields)")
 	initFlag := flag.Bool("init", false, "create initial config files in --configs directory")
 	validateFlag := flag.Bool("validate", false, "validate all TOML files without generating code")
 
@@ -70,23 +69,16 @@ func main() {
 		fmt.Printf("parsed: %s (%d top-level fields)\n", filepath.Base(f), len(m))
 	}
 
-	// Build schema for environment configs
+	// Build schema for environment configs (intersect = common fields across all envs)
 	var envSchema map[string]*model.Field
 	if len(envAsts) > 0 {
-		switch *mode {
-		case "intersect":
-			envSchema = parser.Intersect(envAsts...)
-		case "union":
-			envSchema = parser.Union(envAsts...)
-		default:
-			log.Fatalf("unknown mode: %s (use 'intersect' or 'union')", *mode)
-		}
+		envSchema = parser.Intersect(envAsts...)
 	}
 
 	// Merge value.toml fields with environment config fields
 	var s map[string]*model.Field
 	if valueFields != nil && envSchema != nil {
-		s = parser.Union(valueFields, envSchema)
+		s = parser.Merge(valueFields, envSchema)
 	} else if valueFields != nil {
 		s = valueFields
 	} else {
@@ -96,6 +88,9 @@ func main() {
 	if len(s) == 0 {
 		log.Fatalf("empty schema — no fields found")
 	}
+
+	// Assign struct names for nested objects (e.g. oauth.github -> OauthGithub)
+	parser.AssignStructNames(s, "")
 
 	// Parse flags.toml if present
 	var flagDefs []*model.FlagDef

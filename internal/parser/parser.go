@@ -33,7 +33,12 @@ func ParseFile(path string) (map[string]*model.Field, error) {
 		return nil, fmt.Errorf("декодирование toml %s: %w", path, err)
 	}
 
-	return buildFieldsWithComments(root, comments, "")
+	fields, err := buildFieldsWithComments(root, comments, "")
+	if err != nil {
+		return nil, err
+	}
+	AssignStructNames(fields, "")
+	return fields, nil
 }
 
 // extractComments парсит TOML файл и извлекает комментарии перед каждым ключом
@@ -106,6 +111,11 @@ func buildFieldsWithComments(node map[string]any, comments commentMap, prefix st
 	res := make(map[string]*model.Field)
 
 	for k, v := range node {
+		// Пропускаем секцию [flags] — она обрабатывается отдельно в loader
+		if prefix == "" && k == "flags" {
+			continue
+		}
+
 		fullKey := k
 		if prefix != "" {
 			fullKey = prefix + "." + k
@@ -190,6 +200,16 @@ func containsDurationSuffix(s string) bool {
 		}
 	}
 	return false
+}
+
+// AssignStructNames рекурсивно проставляет StructName для всех KindObject полей
+func AssignStructNames(fields map[string]*model.Field, prefix string) {
+	for _, f := range fields {
+		if f.Kind == model.KindObject {
+			f.StructName = prefix + ToGoName(f.TOMLName)
+			AssignStructNames(f.Children, f.StructName)
+		}
+	}
 }
 
 // ToGoName конвертирует snake_case в CamelCase

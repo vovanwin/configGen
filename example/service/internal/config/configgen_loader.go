@@ -41,6 +41,12 @@ type LoadOptions struct {
 	EnableEnv bool
 }
 
+// LoadResult результат загрузки конфигурации с опциональными флагами
+type LoadResult struct {
+	Config *Config
+	Flags  *Flags // nil если секция [flags] не найдена в config файлах
+}
+
 // Load загружает все конфигурации окружений и выбирает нужную
 // Порядок мержа для каждого env: value.toml -> config_{env}.toml
 // Для текущего env дополнительно: -> override.toml (если EnableOverride=true)
@@ -128,6 +134,9 @@ func Load(opts *LoadOptions) (*Config, error) {
 				}
 			}
 
+			// Удаляем секцию flags перед unmarshal в Config
+			k.Delete("flags")
+
 			cfg := &Config{}
 			if err := k.UnmarshalWithConf("", cfg, koanf.UnmarshalConf{Tag: "toml"}); err != nil {
 				return nil, fmt.Errorf("декодирование конфига: %w", err)
@@ -150,6 +159,65 @@ func Load(opts *LoadOptions) (*Config, error) {
 	return current, nil
 }
 
+// LoadWithFlags загружает конфигурацию и извлекает локальные значения флагов из секции [flags]
+func LoadWithFlags(opts *LoadOptions) (*LoadResult, error) {
+	if opts == nil {
+		opts = &LoadOptions{
+			ConfigDir:      "./configs",
+			EnableOverride: true,
+		}
+	}
+
+	cfg, err := Load(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	env := opts.Environment
+	if env == "" {
+		env = GetEnv()
+	}
+
+	// Собираем значения флагов из config файлов текущего окружения
+	flagOverrides := loadFlagOverrides(opts.ConfigDir, env)
+
+	var flags *Flags
+	if len(flagOverrides) > 0 {
+		// Мержим: дефолты + override из конфигов
+		merged := DefaultFlagValues()
+		for k, v := range flagOverrides {
+			merged[k] = v
+		}
+		flags = NewFlags(NewMemoryStore(merged))
+	} else {
+		flags = NewFlags(NewMemoryStore(DefaultFlagValues()))
+	}
+
+	return &LoadResult{Config: cfg, Flags: flags}, nil
+}
+
+// loadFlagOverrides загружает секцию [flags] из config файлов
+func loadFlagOverrides(configDir string, env Environment) map[string]any {
+	k := koanf.New(".")
+
+	// Загружаем config_{env}.toml для извлечения [flags]
+	envPath := filepath.Join(configDir, fmt.Sprintf("config_%s.toml", env))
+	if fileExists(envPath) {
+		_ = k.Load(file.Provider(envPath), toml.Parser())
+	}
+
+	raw := k.Get("flags")
+	if raw == nil {
+		return nil
+	}
+
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return m
+}
+
 // loadSingle загружает один конфиг: value.toml + config_{env}.toml
 func loadSingle(valuePath string, hasValue bool, envPath string) (*Config, error) {
 	k := koanf.New(".")
@@ -163,6 +231,9 @@ func loadSingle(valuePath string, hasValue bool, envPath string) (*Config, error
 	if err := k.Load(file.Provider(envPath), toml.Parser()); err != nil {
 		return nil, fmt.Errorf("загрузка %s: %w", filepath.Base(envPath), err)
 	}
+
+	// Удаляем секцию flags перед unmarshal
+	k.Delete("flags")
 
 	cfg := &Config{}
 	if err := k.UnmarshalWithConf("", cfg, koanf.UnmarshalConf{Tag: "toml"}); err != nil {

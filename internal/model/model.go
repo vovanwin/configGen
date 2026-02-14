@@ -36,10 +36,11 @@ func (k Kind) String() string {
 
 // Field представляет одно поле конфигурации
 type Field struct {
-	Name     string            // Имя в Go (CamelCase)
-	TOMLName string            // Оригинальное имя из TOML
-	Kind     Kind              // Тип поля
-	Children map[string]*Field // Для вложенных объектов
-	ItemKind Kind              // Для слайсов: тип элементов
-	Comment  string            // Комментарий из TOML файла
+	Name       string            // Имя в Go (CamelCase)
+	TOMLName   string            // Оригинальное имя из TOML
+	Kind       Kind              // Тип поля
+	Children   map[string]*Field // Для вложенных объектов
+	ItemKind   Kind              // Для слайсов: тип элементов
+	Comment    string            // Комментарий из TOML файла
+	StructName string            // Полное имя Go-структуры (например "OauthGithub")
 }

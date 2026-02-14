@@ -21,8 +21,8 @@ func TestGoType(t *testing.T) {
 		{&model.Field{Kind: model.KindDuration}, "time.Duration"},
 		{&model.Field{Kind: model.KindSlice, ItemKind: model.KindString}, "[]string"},
 		{&model.Field{Kind: model.KindSlice, ItemKind: model.KindInt}, "[]int"},
-		{&model.Field{Kind: model.KindObject, TOMLName: "server"}, "Server"},
-		{&model.Field{Kind: model.KindObject, TOMLName: "my_config"}, "MyConfig"},
+		{&model.Field{Kind: model.KindObject, TOMLName: "server", StructName: "Server"}, "Server"},
+		{&model.Field{Kind: model.KindObject, TOMLName: "my_config", StructName: "MyConfig"}, "MyConfig"},
 	}
 
 	for _, tt := range tests {
@@ -112,9 +112,10 @@ func TestGenerate(t *testing.T) {
 
 	fields := map[string]*model.Field{
 		"server": {
-			Name:     "Server",
-			TOMLName: "server",
-			Kind:     model.KindObject,
+			Name:       "Server",
+			TOMLName:   "server",
+			Kind:       model.KindObject,
+			StructName: "Server",
 			Children: map[string]*model.Field{
 				"host":    {Name: "Host", TOMLName: "host", Kind: model.KindString},
 				"port":    {Name: "Port", TOMLName: "port", Kind: model.KindInt},

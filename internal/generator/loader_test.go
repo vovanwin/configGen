@@ -14,9 +14,10 @@ func TestGenerateLoaderWithEnvOverride(t *testing.T) {
 
 	fields := map[string]*model.Field{
 		"server": {
-			Name:     "Server",
-			TOMLName: "server",
-			Kind:     model.KindObject,
+			Name:       "Server",
+			TOMLName:   "server",
+			Kind:       model.KindObject,
+			StructName: "Server",
 			Children: map[string]*model.Field{
 				"host": {Name: "Host", TOMLName: "host", Kind: model.KindString},
 				"port": {Name: "Port", TOMLName: "port", Kind: model.KindInt},
